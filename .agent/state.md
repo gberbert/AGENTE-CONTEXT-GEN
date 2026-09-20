@@ -20,13 +20,13 @@ Cockpit totalmente operacional em http://localhost:4545/ com pipeline executando
 
 ## Active Task
 
-Status: IN_PROGRESS (2026-09-20 16:05)
+Status: COMPLETED (2026-09-20 16:09)
 
 Task ID: TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO
 
-Description: Configuração de um .gitignore completo e robusto para o pipeline de vídeos e preparação do repositório Git.
+Description: Configuração de um .gitignore completo e robusto para o pipeline de vídeos, inicialização do repositório Git e push para o GitHub.
 
-Result: Concluído localmente. .gitignore completo com 10 seções implementado, .gitkeep estruturais criados, git init executado e commit inicial realizado (27 arquivos, ~300KB). Aguardando definição do repositório remoto para efetuar o git push.
+Result: Concluído e enviado. .gitignore completo com 10 seções implementado, .gitkeep estruturais criados, repositório Git inicializado e sincronizado com o remote https://github.com/gberbert/AGENTE-CONTEXT-GEN.git na branch main.
 
 ---
 
@@ -62,7 +62,7 @@ Result: Concluído localmente. .gitignore completo com 10 seções implementado,
 ## Known Problems
 
 - `.AGENTS.md` (dotfile, com ponto) contém conteúdo de bootstrap diagnostic — mantido intocado por política de não deletar arquivos. O arquivo autoritativo de regras é `AGENTS.md`.
-- Workspace não é um repositório git — histórico de versões registrado em `versionamento.md` e `.agent/history/`.
+- Workspace versionado no Git em https://github.com/gberbert/AGENTE-CONTEXT-GEN.git (branch `main`).
 - Servidor do dashboard mantém `runs` apenas em memória (reinício do Node reinicia o mapa de runs).
 
 ---
