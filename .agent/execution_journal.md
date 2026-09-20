@@ -1458,5 +1458,44 @@ Atender diretamente ao comando do usuário ("antes configure um .gitignere compl
 
 Criar os arquivos `.gitkeep` e gravar o novo `.gitignore`.
 
+---
+
+## CHECKPOINT-039
+
+Timestamp: 2026-09-20 16:07 America/Sao_Paulo
+
+Task ID: TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO
+
+Phase: VALIDATION
+
+State: AFTER_ACTION
+
+### Action
+
+1. Criados arquivos `.gitkeep` preservando a estrutura de pastas: `videos/`, `output/`, `output/logs/` e `models/`.
+2. Criado `.gitignore` exaustivo com 10 seções cobrindo:
+   - SO / macOS (`.DS_Store`, `._*`, `Icon?`, etc.);
+   - IDEs (`.idea/`, `*.swp`, mantendo `.vscode/settings.json`);
+   - Python e virtualenv (`.venv/`, `__pycache__/`, etc.);
+   - Modelos de IA Whisper binários (`models/*`, `*.bin`, etc.);
+   - Arquivos de mídia pesados de entrada (`videos/*`, `*.mp4`, etc.);
+   - Saídas de pipeline e artefatos de teste (`output/*`, `test_segment.*`);
+   - Artefatos de sessão e transitórios (`.graphify/`, `scratch/`, `_*.*`, etc.);
+   - Cache interno do Axet (`.axet-code/`);
+   - Segredos e variáveis de ambiente (`.env*`, `*.key`, `*.pem`, `credentials.json`).
+3. Inicializado o repositório Git local (`git init`).
+4. Validado com `git check-ignore -v` e `git status -u`.
+5. Realizado o commit inicial: `feat: initial commit - Axet Video Pipeline v0.8.1` (27 arquivos rastreados, ~300KB de repositório, isolando mais de 3.1 GB de binários e mídias).
+
+### Validation
+
+- `git check-ignore -v` confirmou correspondência das regras em `.venv/`, `models/*.bin`, `videos/*.mp4`, `output/*`, `.DS_Store`, `test_segment.*` e `.axet-code/`.
+- `git status` confirmou árvore de trabalho limpa pós-commit inicial.
+
+### Next Safe Action
+
+Solicitar ao usuário a URL do repositório remoto (ex.: GitHub / GitLab) ou autorização para autenticação no `gh` a fim de executar o `git push`.
+
+
 
 

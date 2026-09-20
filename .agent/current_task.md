@@ -4,9 +4,9 @@ Task ID: TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO
 
 Created: 2026-09-20 16:05 America/Sao_Paulo
 
-Status: IN_PROGRESS
+Status: AWAITING_INPUT (2026-09-20 16:07)
 
-Resume Authorization: YES
+Resume Authorization: YES (Aguardando URL do remote / auth GitHub para efetuar git push)
 
 ---
 
