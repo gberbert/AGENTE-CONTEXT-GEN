@@ -1,0 +1,14 @@
+{
+  "github.copilot.chat.codeGeneration.instructions": [
+    {
+      "file": "AGENTS.md"
+    }
+  ],
+  "files.exclude": {
+    "**/.venv": true,
+    "**/output/logs": false
+  },
+  "chat.useAgentsMdFile": true,
+  "chat.includeApplyingInstructions": true,
+  "chat.includeReferencedInstructions": true
+}

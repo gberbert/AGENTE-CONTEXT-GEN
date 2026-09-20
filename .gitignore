@@ -1,0 +1,134 @@
+# ==============================================================================
+# AXET VIDEO PIPELINE — .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Operating System & Filesystem Artifacts
+# ------------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Icon?
+Thumbs.db
+ehthumbs.db
+
+# ------------------------------------------------------------------------------
+# 2. IDEs & Editors
+# ------------------------------------------------------------------------------
+.idea/
+*.swp
+*.swo
+*~
+# Preserve project settings in .vscode while ignoring local user caches
+.vscode/*
+!.vscode/settings.json
+
+# ------------------------------------------------------------------------------
+# 3. Python Virtual Environments & Caches
+# ------------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ------------------------------------------------------------------------------
+# 4. Node.js & Package Managers
+# ------------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm
+
+# ------------------------------------------------------------------------------
+# 5. Whisper & AI Models (Large binary models > 100MB)
+# ------------------------------------------------------------------------------
+models/*
+!models/.gitkeep
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# ------------------------------------------------------------------------------
+# 6. Raw Video & Audio Media Files
+# ------------------------------------------------------------------------------
+videos/*
+!videos/.gitkeep
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.flv
+*.m4v
+*.ts
+*.wmv
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+
+# ------------------------------------------------------------------------------
+# 7. Pipeline Execution Outputs & Transcripts
+# ------------------------------------------------------------------------------
+output/*
+!output/.gitkeep
+!output/logs/
+output/logs/*
+!output/logs/.gitkeep
+test_segment.*
+
+# ------------------------------------------------------------------------------
+# 8. Transient Session Artifacts & Scratch (per AGENTS.md rules)
+# ------------------------------------------------------------------------------
+_*.*
+scripts/_*.*
+.graphify/
+.graphifyignore
+smoke-run/
+legacy_piloto/
+scratch/
+*.tmp
+*.temp
+*.bak
+
+# ------------------------------------------------------------------------------
+# 9. Axet Internal Codebase Database & Telemetry Cache
+# ------------------------------------------------------------------------------
+.axet-code/
+
+# ------------------------------------------------------------------------------
+# 10. Credentials, Keys & Secrets
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.cert
+credentials.json
