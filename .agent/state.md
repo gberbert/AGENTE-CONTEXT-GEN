@@ -20,26 +20,32 @@ Cockpit totalmente operacional em http://localhost:4545/ com pipeline executando
 
 ## Active Task
 
-Status: COMPLETED (2026-09-20 16:09)
+Status: COMPLETED (2026-09-20 22:49)
 
-Task ID: TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO
+Task ID: TASK-20260920-2240-BATCH-PERSISTENCE-AND-RESUME
 
-Description: Configuração de um .gitignore completo e robusto para o pipeline de vídeos, inicialização do repositório Git e push para o GitHub.
+Description: Implementação de persistência atômica do lote (batch_manifest.json), detecção dual de vídeos concluídos no disco e suporte a retomada inteligente (resume de onde parou sem reprocessar os 287 vídeos já concluídos).
 
-Result: Concluído e enviado. .gitignore completo com 10 seções implementado, .gitkeep estruturais criados, repositório Git inicializado e sincronizado com o remote https://github.com/gberbert/AGENTE-CONTEXT-GEN.git na branch main.
+Result: Concluído e validado. Implementada persistência de manifesto (`batch_manifest.json`) no workspace (.agent/) e na pasta de saída (OneDrive), detector dual com normalização NFC para acentos no macOS, suporte a `skipCompleted` nos endpoints `/api/batch/scan`, `/api/batch/start` e `/api/batch/resume`, botão "Retomar de Onde Parou" no Cockpit e validação no navegador confirmando 287 concluídos e 336 pendentes.
 
 ---
 
 ## Current Implementation State
 
-- `dashboard/server.js` — endpoint `POST /api/batch/config` para persistência imediata de parâmetros de lote, amostragem de armazenamento via `fs.statfsSync("/")` e salvaguarda de 20 GB.
-- `dashboard/index.html` e `dashboard/style.css` — novos cartões de hidratação OneDrive, espaço livre no Mac e área temporária `/tmp`, com tags `💾 Local` e `☁️ Nuvem` na tabela de fila.
-- `dashboard/app.js` — proteção de inputs de configuração em `renderBatchState` (não sobrescreve quando ocioso), persistência no `localStorage` e envio assíncrono para o backend.
-- `scripts/process_video.sh` — sandbox temporária isolada `/tmp/axet-workspace/${RUN_ID}`, extração de áudio com remoção imediata de vídeo temporário, salvaguarda absoluta de exclusão fora de `/tmp` e validação do markdown gerado.
+- `dashboard/server.js` — persistência contínua em `batch_manifest.json`, detecção dual de relatórios Markdown em disco (`checkItemCompletedOnDisk`), auto-recuperação na inicialização (`loadBatchManifest`), endpoints `/api/batch/scan`, `/api/batch/start`, `/api/batch/resume` com salvaguarda `skipCompleted`.
+- `dashboard/index.html` e `dashboard/style.css` — botão visual `⏯ Retomar de Onde Parou` (`.btn-resume`), checkbox `🛡️ Pular vídeos já concluídos` e tags `✓ Concluído`.
+- `dashboard/app.js` — integração completa de retomada sem reprocessamento, exibição de contagens `287 concluídos • 336 a processar` e links diretos para relatórios gerados.
+- `scripts/process_video.sh` — prevenção de aninhamento duplo de pastas de saída e compatibilidade retroativa com caminhos históricos.
 
 ---
 
 ## Latest Relevant Changes
+
+- Implementado sistema de persistência atômica de lote (`batch_manifest.json`) salvo em `.agent/` e na pasta de saída do lote, com recarga automática ao reiniciar o servidor Node.
+- Implementado detector dual de vídeos concluídos (`checkItemCompletedOnDisk`) com normalização Unicode NFC e validação de tamanho (> 150 bytes), garantindo reconhecimento dos 287 vídeos já processados.
+- Adicionado botão "Retomar de Onde Parou" no Cockpit Web e endpoint `/api/batch/resume` com `skipCompleted: true` por padrão.
+- Adicionado checkbox de salvaguarda "Pular vídeos já concluídos" no Cockpit para prevenção de retrabalho.
+- Corrigida a duplicação de pastas de saída em `scripts/process_video.sh` quando invocado pelo servidor.
 
 - Corrigida a reversão involuntária do diretório de saída (`#batch-output-dir`) para o padrão `/Users/gcostabe/dev/TESTE-AXET-CODE/output`, adicionando proteção em `renderBatchState`, persistência no `localStorage` e novo endpoint `POST /api/batch/config`.
 - Implementada telemetria de hidratação do OneDrive em tempo real: medição de GBs alocados em disco vs volume lógico, taxa de hidratação e contagem de vídeos baixados vs online-only na nuvem.

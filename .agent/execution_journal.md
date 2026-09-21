@@ -1525,7 +1525,113 @@ State: AFTER_ACTION
 
 Atualizar documentação de arquitetura (`.stack_tech.md`), `.agent/state.md` e `.agent/current_task.md`, e reportar sucesso ao usuário.
 
+---
 
+## CHECKPOINT-041
 
+Timestamp: 2026-09-20 22:42 America/Sao_Paulo
 
+Task ID: TASK-20260920-2240-BATCH-PERSISTENCE-AND-RESUME
 
+Phase: INVESTIGATION / PLANNING
+
+State: BEFORE_ACTION
+
+### Action
+
+1. Investigado o estado do lote em execução no dashboard (`http://localhost:4545/api/batch/status`): confirmados 623 vídeos no total, sendo 287 processados com sucesso e 335 com erro (`spawn bash ENOENT`).
+2. Efetuada varredura física no disco (`OneDrive-NTTDATAEMEAL/REEF Formación - 02. Formaciones Mapfre/_markdown`): confirmada a existência física de exatamente 287 relatórios Markdown (`*_resumo_*.md` > 150 bytes).
+3. Salvo snapshot emergencial de todo o estado do lote em `.agent/batch_state_snapshot.json` para proteger os metadados dos 287 concluídos contra reinício do processo Node.
+4. Elaborado o plano de implementação `implementation_plan.md` contemplando persistência atômica contínua em arquivo (`batch_manifest.json`), validação dual (manifesto + disco) e suporte a retomada inteligente (`skipCompleted`).
+
+### Relevant Files
+
+- `.agent/batch_state_snapshot.json`
+- `dashboard/server.js`
+- `dashboard/app.js`
+- `dashboard/index.html`
+- `scripts/process_video.sh`
+
+### Next Safe Action
+
+Apresentar o plano ao usuário e aguardar autorização explícita para início da implementação.
+
+---
+
+## CHECKPOINT-042
+
+Timestamp: 2026-09-20 22:50 America/Sao_Paulo
+
+Task ID: TASK-20260920-2240-BATCH-PERSISTENCE-AND-RESUME
+
+Phase: VALIDATION / COMPLETION
+
+State: AFTER_ACTION
+
+### Action
+
+1. Implementada a persistência atômica contínua em `batch_manifest.json` em `dashboard/server.js` (salva tanto em `.agent/` quanto na pasta de saída do lote).
+2. Implementada função `checkItemCompletedOnDisk(item, outputDir)` com normalização Unicode NFC e validação de relatórios Markdown > 150 bytes, suportando caminhos diretos e legados.
+3. Implementada função `loadBatchManifest()` acionada na inicialização do servidor Node para auto-recuperação sem perda de estado.
+4. Atualizados os endpoints `/api/batch/scan`, `/api/batch/start` e criado `/api/batch/resume` com salvaguarda `skipCompleted: true` (padrão ativo).
+5. Atualizada a interface do Cockpit em `dashboard/index.html`, `dashboard/style.css` e `dashboard/app.js`: adicionado botão `⏯ Retomar de Onde Parou` (`.btn-resume`), checkbox salvaguarda `🛡️ Pular vídeos já concluídos` e tags `✓ Concluído`.
+6. Corrigido `scripts/process_video.sh` para evitar aninhamento duplicado de pastas quando acionado pelo dashboard.
+7. Reiniciado o servidor dashboard em background e executada validação com subagente de navegador e testes de API.
+
+### Relevant Files
+
+- `dashboard/server.js`
+- `dashboard/index.html`
+- `dashboard/style.css`
+- `dashboard/app.js`
+- `scripts/process_video.sh`
+- `.agent/batch_manifest.json`
+- `.agent/batch_state_snapshot.json`
+
+### Validation
+
+- Endpoint `/api/batch/status` confirmou: total 623, concluídos 287 (46%), pendentes 336, erros 0.
+- Endpoint `/api/batch/scan` confirmou: `{ ok: true, count: 623, completedCount: 287, pendingCount: 336 }`.
+- Subagente de navegador inspecionou `http://localhost:4545/`: botão "Retomar de Onde Parou" ativo, estatísticas corretas (287 concluídos / 336 pendentes), checkbox ativo e tabela renderizando os 287 vídeos com tag verde `✓ Concluído`.
+- Walkthrough persistido em `walkthrough.md`.
+
+### Next Safe Action
+
+Apresentar o resultado da validação de persistência e retomada ao usuário e, em seguida, proceder com a análise e resolução da causa raiz do erro `spawn bash ENOENT`.
+
+---
+
+## CHECKPOINT-043
+
+Timestamp: 2026-09-20 22:53 America/Sao_Paulo
+
+Task ID: TASK-20260920-2252-GIT-COMMIT-AND-PUSH
+
+Phase: COMPLETION
+
+State: AFTER_ACTION
+
+### Action
+
+1. Atualizado `versionamento.md` com o registro oficial da versão `[0.9.0] - 2026-09-20`.
+2. Atualizado `.stack_tech.md` refletindo a versão v0.9.0.
+3. Atualizado `.gitignore` adicionando `.agent/*.json` e `.agent/*.tmp*` para isolar arquivos dinâmicos de estado e telemetria do versionamento.
+4. Preparado stage do Git e executado commit e push sincronizados com `origin/main`.
+
+### Relevant Files
+
+- `versionamento.md`
+- `.stack_tech.md`
+- `.gitignore`
+- `.agent/current_task.md`
+- `.agent/state.md`
+- `.agent/execution_journal.md`
+- `dashboard/server.js`
+- `dashboard/app.js`
+- `dashboard/index.html`
+- `dashboard/style.css`
+- `scripts/process_video.sh`
+
+### Next Safe Action
+
+Executar git commit e git push, reportando a confirmação remota ao usuário.

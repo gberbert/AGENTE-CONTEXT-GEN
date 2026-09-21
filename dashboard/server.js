@@ -454,6 +454,274 @@ function updateBatchStats() {
     else if (item.status === "cancelled") stats.cancelled++;
   }
   batchState.stats = stats;
+  saveBatchManifest(false);
+}
+
+// ---------------------------------------------------------------------------
+// Persistência de Manifesto e Detecção Dual de Vídeos Concluídos
+// ---------------------------------------------------------------------------
+
+const MANIFEST_WORKSPACE_PATH = path.join(ROOT_DIR, ".agent/batch_manifest.json");
+const MANIFEST_FILENAME = "batch_manifest.json";
+let manifestSaveTimeout = null;
+
+/**
+ * Verifica se um relatório Markdown final de um vídeo existe em disco e é válido (> 150 bytes).
+ * Compara nomes normalizados em NFC para suportar acentos no macOS/OneDrive e verifica tanto
+ * o caminho canônico quanto caminhos aninhados de execuções legadas.
+ */
+function checkItemCompletedOnDisk(item, outputDir) {
+  const baseOutDir = outputDir || batchState.outputDir;
+  if (!baseOutDir || !fs.existsSync(baseOutDir)) return { completed: false };
+
+  const filename = item.filename || item.name || "";
+  const baseNameNoExt = path.parse(filename).name;
+  if (!baseNameNoExt) return { completed: false };
+
+  const normBaseName = baseNameNoExt.normalize("NFC").toLowerCase();
+  const relDir = path.dirname(item.relativePath || "");
+
+  const candidateDirs = [];
+  if (item.targetOutputDir) {
+    candidateDirs.push(item.targetOutputDir);
+  }
+
+  const canonicalDir = relDir && relDir !== "."
+    ? path.join(baseOutDir, relDir, baseNameNoExt)
+    : path.join(baseOutDir, baseNameNoExt);
+  candidateDirs.push(canonicalDir);
+
+  if (relDir && relDir !== ".") {
+    candidateDirs.push(path.join(canonicalDir, relDir, baseNameNoExt));
+    candidateDirs.push(path.join(baseOutDir, relDir));
+  }
+
+  function testFileValid(filePath) {
+    try {
+      if (!fs.existsSync(filePath)) return null;
+      const base = path.basename(filePath);
+      if (!base.endsWith(".md")) return null;
+      const st = fs.statSync(filePath);
+      if (st.isFile() && st.size >= 150) {
+        return { markdownPath: filePath, sizeBytes: st.size, mtime: st.mtime.toISOString() };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function searchDirForMd(dirPath) {
+    if (!fs.existsSync(dirPath)) return null;
+    try {
+      const files = fs.readdirSync(dirPath);
+      for (const f of files) {
+        if (!f.endsWith(".md")) continue;
+        const normF = f.normalize("NFC").toLowerCase();
+        if (normF.startsWith(normBaseName) || normF.includes("_resumo_")) {
+          const full = path.join(dirPath, f);
+          const valid = testFileValid(full);
+          if (valid) return valid;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  for (const cDir of candidateDirs) {
+    const found = searchDirForMd(cDir);
+    if (found) return { completed: true, ...found, foundInDir: cDir };
+  }
+
+  // Busca recursiva limitada (profundidade até 3) em cada candidato existente
+  function walkSearch(currentDir, depth = 0) {
+    if (depth > 3 || !fs.existsSync(currentDir)) return null;
+    try {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const ent of entries) {
+        const full = path.join(currentDir, ent.name);
+        if (ent.isDirectory()) {
+          const res = walkSearch(full, depth + 1);
+          if (res) return res;
+        } else if (ent.isFile() && ent.name.endsWith(".md")) {
+          const normF = ent.name.normalize("NFC").toLowerCase();
+          if (normF.startsWith(normBaseName) || normF.includes(normBaseName)) {
+            const valid = testFileValid(full);
+            if (valid) return { ...valid, foundInDir: currentDir };
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  for (const cDir of candidateDirs) {
+    const found = walkSearch(cDir, 0);
+    if (found) return { completed: true, ...found };
+  }
+
+  return { completed: false };
+}
+
+function saveBatchManifest(immediate = false) {
+  const doSave = () => {
+    manifestSaveTimeout = null;
+    try {
+      const manifest = {
+        updatedAt: new Date().toISOString(),
+        status: batchState.status,
+        inputDir: batchState.inputDir,
+        outputDir: batchState.outputDir,
+        parallelism: batchState.parallelism,
+        whisperModel: batchState.whisperModel,
+        whisperLanguage: batchState.whisperLanguage || "es",
+        axetModel: batchState.axetModel || "gpt-5.6-terra",
+        startedAt: batchState.startedAt,
+        finishedAt: batchState.finishedAt,
+        stats: { ...batchState.stats },
+        queue: batchState.queue.map((q) => ({
+          id: q.id,
+          relativePath: q.relativePath,
+          filename: q.filename,
+          sizeBytes: q.sizeBytes,
+          allocatedBytes: q.allocatedBytes != null ? q.allocatedBytes : 0,
+          isHydrated: !!q.isHydrated,
+          isOnlineOnly: !!q.isOnlineOnly,
+          targetOutputDir: q.targetOutputDir,
+          markdownPath: q.markdownPath || null,
+          status: q.status,
+          runId: q.runId,
+          pid: q.pid,
+          currentStep: q.currentStep,
+          currentStepProgress: q.currentStepProgress,
+          currentStepMessage: q.currentStepMessage,
+          startedAt: q.startedAt,
+          finishedAt: q.finishedAt,
+          duration_s: q.duration_s,
+          error: q.error,
+        })),
+      };
+
+      const payload = JSON.stringify(manifest, null, 2);
+
+      // 1. Grava no workspace (.agent/batch_manifest.json)
+      try {
+        const agentDir = path.join(ROOT_DIR, ".agent");
+        if (!fs.existsSync(agentDir)) fs.mkdirSync(agentDir, { recursive: true });
+        const tmpFile = `${MANIFEST_WORKSPACE_PATH}.tmp_${Date.now()}`;
+        fs.writeFileSync(tmpFile, payload, "utf8");
+        fs.renameSync(tmpFile, MANIFEST_WORKSPACE_PATH);
+      } catch (err) {
+        console.error("[manifest] Erro ao gravar .agent/batch_manifest.json:", err.message);
+      }
+
+      // 2. Grava na pasta de saída (outputDir/batch_manifest.json)
+      if (batchState.outputDir && fs.existsSync(batchState.outputDir)) {
+        try {
+          const outManifestPath = path.join(batchState.outputDir, MANIFEST_FILENAME);
+          const tmpOut = `${outManifestPath}.tmp_${Date.now()}`;
+          fs.writeFileSync(tmpOut, payload, "utf8");
+          fs.renameSync(tmpOut, outManifestPath);
+        } catch (err) {
+          console.error("[manifest] Erro ao gravar batch_manifest.json na pasta de saída:", err.message);
+        }
+      }
+    } catch (e) {
+      console.error("[manifest] Falha geral ao salvar manifesto:", e.message);
+    }
+  };
+
+  if (immediate) {
+    if (manifestSaveTimeout) {
+      clearTimeout(manifestSaveTimeout);
+      manifestSaveTimeout = null;
+    }
+    doSave();
+  } else {
+    if (!manifestSaveTimeout) {
+      manifestSaveTimeout = setTimeout(doSave, 1000);
+    }
+  }
+}
+
+function loadBatchManifest() {
+  const candidatePaths = [
+    MANIFEST_WORKSPACE_PATH,
+    path.join(ROOT_DIR, ".agent/batch_state_snapshot.json"),
+    batchState.outputDir ? path.join(batchState.outputDir, MANIFEST_FILENAME) : null,
+  ].filter(Boolean);
+
+  let loadedData = null;
+  let sourcePath = null;
+
+  for (const cPath of candidatePaths) {
+    if (fs.existsSync(cPath)) {
+      try {
+        const raw = fs.readFileSync(cPath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.queue) && parsed.queue.length > 0) {
+          loadedData = parsed;
+          sourcePath = cPath;
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (!loadedData) return false;
+
+  console.log(`[manifest] Carregando manifesto persistido de ${sourcePath} (${loadedData.queue.length} vídeos)...`);
+
+  if (loadedData.inputDir && fs.existsSync(loadedData.inputDir)) {
+    batchState.inputDir = loadedData.inputDir;
+  }
+  if (loadedData.outputDir) {
+    batchState.outputDir = loadedData.outputDir;
+  }
+  if (loadedData.parallelism) {
+    batchState.parallelism = Math.max(1, Math.min(8, parseInt(loadedData.parallelism, 10)));
+  }
+  if (loadedData.whisperModel) {
+    batchState.whisperModel = loadedData.whisperModel;
+  }
+  if (loadedData.whisperLanguage) {
+    batchState.whisperLanguage = loadedData.whisperLanguage;
+  }
+  if (loadedData.axetModel) {
+    batchState.axetModel = loadedData.axetModel;
+  }
+
+  if (loadedData.status === "running") {
+    batchState.status = "stopped";
+  } else {
+    batchState.status = loadedData.status || "idle";
+  }
+  batchState.startedAt = loadedData.startedAt || null;
+  batchState.finishedAt = loadedData.finishedAt || null;
+
+  // Reconcilia cada item com o disco
+  batchState.queue = loadedData.queue.map((q) => {
+    const item = { ...q };
+    const diskCheck = checkItemCompletedOnDisk(item, batchState.outputDir);
+    if (diskCheck.completed || item.status === "completed") {
+      item.status = "completed";
+      item.currentStep = "concluido";
+      item.currentStepProgress = 100;
+      if (diskCheck.markdownPath) {
+        item.markdownPath = diskCheck.markdownPath;
+      }
+      if (!item.currentStepMessage || !item.currentStepMessage.includes("Relatório:")) {
+        item.currentStepMessage = item.markdownPath
+          ? `Relatório validado: ${path.basename(item.markdownPath)}`
+          : "Relatório gerado com sucesso";
+      }
+      item.error = null;
+    }
+    return item;
+  });
+
+  updateBatchStats();
+  console.log(`[manifest] Manifesto carregado: ${batchState.stats.completed} concluídos, ${batchState.stats.errors} erros, ${batchState.stats.pending} pendentes.`);
+  saveBatchManifest(true);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +960,7 @@ function getBatchSnapshot() {
       isHydrated: !!q.isHydrated,
       isOnlineOnly: !!q.isOnlineOnly,
       targetOutputDir: q.targetOutputDir || (q.relativePath ? path.join(batchState.outputDir, path.dirname(q.relativePath), path.parse(q.filename).name) : path.join(batchState.outputDir, path.parse(q.filename).name)),
+      markdownPath: q.markdownPath || null,
       status: q.status,
       runId: q.runId,
       pid: q.pid,
@@ -782,6 +1051,10 @@ function finishBatchItemFromRun(runId, status, duration_s) {
       item.status = "completed";
       item.currentStep = "concluido";
       item.currentStepProgress = 100;
+      const diskCheck = checkItemCompletedOnDisk(item, batchState.outputDir);
+      if (diskCheck.completed && diskCheck.markdownPath) {
+        item.markdownPath = diskCheck.markdownPath;
+      }
     } else if (status === "error") {
       item.status = "error";
     } else if (status === "cancelled") {
@@ -790,6 +1063,7 @@ function finishBatchItemFromRun(runId, status, duration_s) {
     if (duration_s != null) item.duration_s = duration_s;
     item.finishedAt = new Date().toISOString();
     updateBatchStats();
+    saveBatchManifest(true);
     broadcastBatchState();
   }
 }
@@ -866,7 +1140,8 @@ function startWorkerForItem(item) {
     PYTHONUNBUFFERED: "1",
   };
 
-  const child = spawn("bash", [scriptPath, ...args], {
+  const bashBin = fs.existsSync("/bin/bash") ? "/bin/bash" : "bash";
+  const child = spawn(bashBin, [scriptPath, ...args], {
     cwd: ROOT_DIR,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -903,6 +1178,12 @@ function startWorkerForItem(item) {
       item.status = "cancelled";
     } else if (code === 0) {
       item.status = "completed";
+      item.currentStep = "concluido";
+      item.currentStepProgress = 100;
+      const diskCheck = checkItemCompletedOnDisk(item, batchState.outputDir);
+      if (diskCheck.completed && diskCheck.markdownPath) {
+        item.markdownPath = diskCheck.markdownPath;
+      }
     } else if (item.status === "running") {
       item.status = "error";
       const cleanErr = stderrBuffer.trim().split("\n").filter(Boolean).pop();
@@ -910,6 +1191,7 @@ function startWorkerForItem(item) {
     }
 
     updateBatchStats();
+    saveBatchManifest(true);
     broadcastBatchState();
 
     if (batchState.status === "running") {
@@ -918,6 +1200,7 @@ function startWorkerForItem(item) {
       batchState.status = "stopped";
       batchState.finishedAt = new Date().toISOString();
       updateBatchStats();
+      saveBatchManifest(true);
       broadcastBatchState();
     }
   });
@@ -928,6 +1211,7 @@ function startWorkerForItem(item) {
     item.error = err.message;
     item.finishedAt = new Date().toISOString();
     updateBatchStats();
+    saveBatchManifest(true);
     broadcastBatchState();
     if (batchState.status === "running") {
       pumpBatchQueue();
@@ -995,6 +1279,7 @@ function stopBatch() {
   } catch (_) {}
 
   updateBatchStats();
+  saveBatchManifest(true);
   broadcastBatchState();
   console.log("[batch] Lote totalmente interrompido com sucesso.");
 }
@@ -1466,34 +1751,98 @@ const server = http.createServer((req, res) => {
       }
       const videos = scanVideosRecursively(targetDir);
       batchState.inputDir = targetDir;
-      if (batchState.status === "idle" || batchState.status === "stopped") {
-        batchState.queue = videos.map((v) => ({
-          id: v.id,
-          relativePath: v.relativePath,
-          fullPath: v.fullPath,
-          filename: v.filename,
-          sizeBytes: v.sizeBytes,
-          allocatedBytes: v.allocatedBytes || 0,
-          isHydrated: !!v.isHydrated,
-          isOnlineOnly: !!v.isOnlineOnly,
-          status: "pending",
-          runId: null,
-          pid: null,
-          startedAt: null,
-          finishedAt: null,
-          duration_s: null,
-          error: null,
-        }));
+
+      // Mapeia histórico existente por caminho relativo normalizado (NFC)
+      const existingMap = new Map();
+      for (const item of batchState.queue) {
+        if (item.relativePath) {
+          existingMap.set(item.relativePath.normalize("NFC"), item);
+        }
+      }
+
+      let completedCount = 0;
+      let pendingCount = 0;
+
+      if (batchState.status === "idle" || batchState.status === "stopped" || batchState.status === "completed") {
+        batchState.queue = videos.map((v) => {
+          const normRel = (v.relativePath || "").normalize("NFC");
+          const existing = existingMap.get(normRel);
+          const diskCheck = checkItemCompletedOnDisk(v, batchState.outputDir);
+          const isCompleted = diskCheck.completed || (existing && existing.status === "completed");
+
+          if (isCompleted) {
+            completedCount++;
+            return {
+              id: v.id,
+              relativePath: v.relativePath,
+              fullPath: v.fullPath,
+              filename: v.filename,
+              sizeBytes: v.sizeBytes,
+              allocatedBytes: v.allocatedBytes || 0,
+              isHydrated: !!v.isHydrated,
+              isOnlineOnly: !!v.isOnlineOnly,
+              targetOutputDir: existing ? existing.targetOutputDir : null,
+              markdownPath: diskCheck.markdownPath || (existing ? existing.markdownPath : null),
+              status: "completed",
+              runId: existing ? existing.runId : null,
+              pid: null,
+              currentStep: "concluido",
+              currentStepProgress: 100,
+              currentStepMessage: diskCheck.markdownPath
+                ? `Relatório validado: ${path.basename(diskCheck.markdownPath)}`
+                : (existing && existing.currentStepMessage ? existing.currentStepMessage : "Relatório validado no disco"),
+              startedAt: existing ? existing.startedAt : null,
+              finishedAt: existing ? existing.finishedAt : null,
+              duration_s: existing ? existing.duration_s : null,
+              error: null,
+            };
+          } else {
+            pendingCount++;
+            return {
+              id: v.id,
+              relativePath: v.relativePath,
+              fullPath: v.fullPath,
+              filename: v.filename,
+              sizeBytes: v.sizeBytes,
+              allocatedBytes: v.allocatedBytes || 0,
+              isHydrated: !!v.isHydrated,
+              isOnlineOnly: !!v.isOnlineOnly,
+              targetOutputDir: existing ? existing.targetOutputDir : null,
+              markdownPath: null,
+              status: "pending",
+              runId: null,
+              pid: null,
+              currentStep: null,
+              currentStepProgress: null,
+              currentStepMessage: null,
+              startedAt: null,
+              finishedAt: null,
+              duration_s: null,
+              error: existing && existing.status === "error" ? existing.error : null,
+            };
+          }
+        });
         updateBatchStats();
         updateStorageTelemetry();
+        saveBatchManifest(true);
+        broadcastBatchState();
       }
+
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ ok: true, dir: targetDir, count: videos.length, videos, storage: storageTelemetry }));
+      res.end(JSON.stringify({
+        ok: true,
+        dir: targetDir,
+        count: videos.length,
+        completedCount,
+        pendingCount,
+        videos,
+        storage: storageTelemetry,
+      }));
     });
     return;
   }
 
-  if (req.method === "POST" && pathname === "/api/batch/start") {
+  if (req.method === "POST" && (pathname === "/api/batch/start" || pathname === "/api/batch/resume")) {
     readBody(req, (body) => {
       if (batchState.status === "running") {
         res.writeHead(409, { "Content-Type": "application/json; charset=utf-8" });
@@ -1512,6 +1861,7 @@ const server = http.createServer((req, res) => {
       const whisperModel = String(data.whisperModel || batchState.whisperModel || "small").trim();
       const whisperLanguage = String(data.whisperLanguage || batchState.whisperLanguage || "es").trim().toLowerCase();
       const axetModel = String(data.axetModel || batchState.axetModel || "gpt-5.6-terra").trim();
+      const skipCompleted = data.skipCompleted !== false; // Padrão: true (Retomada Inteligente)
 
       if (!fs.existsSync(inputDir)) {
         res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
@@ -1542,29 +1892,80 @@ const server = http.createServer((req, res) => {
       batchState.whisperModel = whisperModel;
       batchState.whisperLanguage = whisperLanguage;
       batchState.axetModel = axetModel;
-      batchState.queue = videos.map((v) => ({
-        id: v.id,
-        relativePath: v.relativePath,
-        fullPath: v.fullPath,
-        filename: v.filename,
-        sizeBytes: v.sizeBytes,
-        allocatedBytes: v.allocatedBytes || 0,
-        isHydrated: !!v.isHydrated,
-        isOnlineOnly: !!v.isOnlineOnly,
-        status: "pending",
-        runId: null,
-        pid: null,
-        startedAt: null,
-        finishedAt: null,
-        duration_s: null,
-        error: null,
-      }));
+
+      // Mapeia histórico existente por caminho relativo normalizado (NFC)
+      const existingMap = new Map();
+      for (const item of batchState.queue) {
+        if (item.relativePath) {
+          existingMap.set(item.relativePath.normalize("NFC"), item);
+        }
+      }
+
+      batchState.queue = videos.map((v) => {
+        const normRel = (v.relativePath || "").normalize("NFC");
+        const existing = existingMap.get(normRel);
+        const diskCheck = checkItemCompletedOnDisk(v, outputDir);
+        const isCompleted = (existing && existing.status === "completed") || diskCheck.completed;
+
+        if (skipCompleted && isCompleted) {
+          // Mantém 100% como concluído, preservando metadados e relatório gerado
+          return {
+            id: v.id,
+            relativePath: v.relativePath,
+            fullPath: v.fullPath,
+            filename: v.filename,
+            sizeBytes: v.sizeBytes,
+            allocatedBytes: v.allocatedBytes || 0,
+            isHydrated: !!v.isHydrated,
+            isOnlineOnly: !!v.isOnlineOnly,
+            targetOutputDir: existing ? existing.targetOutputDir : null,
+            markdownPath: diskCheck.markdownPath || (existing ? existing.markdownPath : null),
+            status: "completed",
+            runId: existing ? existing.runId : null,
+            pid: null,
+            currentStep: "concluido",
+            currentStepProgress: 100,
+            currentStepMessage: diskCheck.markdownPath
+              ? `Relatório validado: ${path.basename(diskCheck.markdownPath)}`
+              : (existing && existing.currentStepMessage ? existing.currentStepMessage : "Relatório validado no disco"),
+            startedAt: existing ? existing.startedAt : null,
+            finishedAt: existing ? existing.finishedAt : null,
+            duration_s: existing ? existing.duration_s : null,
+            error: null,
+          };
+        }
+
+        // Reprocessamento ou novo item: define como pending
+        return {
+          id: v.id,
+          relativePath: v.relativePath,
+          fullPath: v.fullPath,
+          filename: v.filename,
+          sizeBytes: v.sizeBytes,
+          allocatedBytes: v.allocatedBytes || 0,
+          isHydrated: !!v.isHydrated,
+          isOnlineOnly: !!v.isOnlineOnly,
+          targetOutputDir: existing ? existing.targetOutputDir : null,
+          markdownPath: null,
+          status: "pending",
+          runId: null,
+          pid: null,
+          currentStep: null,
+          currentStepProgress: null,
+          currentStepMessage: null,
+          startedAt: null,
+          finishedAt: null,
+          duration_s: null,
+          error: null,
+        };
+      });
 
       batchState.status = "running";
       batchState.startedAt = new Date().toISOString();
       batchState.finishedAt = null;
       updateBatchStats();
       updateStorageTelemetry();
+      saveBatchManifest(true);
       broadcastBatchState(true);
 
       // Dispara os primeiros workers respeitando o limite de paralelismo
@@ -1696,6 +2097,9 @@ const server = http.createServer((req, res) => {
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("Not found");
 });
+
+// Carrega o manifesto persistido na inicialização do servidor
+loadBatchManifest();
 
 server.listen(PORT, () => {
   console.log(`[axet-cockpit] Dashboard de telemetria rodando em http://localhost:${PORT}`);

@@ -47,16 +47,6 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/output}"
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-$ROOT_DIR/prompts/analise_transcricao_avancada.md}"
-# Se INPUT_DIR estiver definido e o vídeo estiver dentro dele, espelha subpastas caso não tenha sido feito
-if [[ -n "${INPUT_DIR:-}" && "$VIDEO_PATH" == "$INPUT_DIR"* ]]; then
-  _REL_PATH="${VIDEO_PATH#$INPUT_DIR/}"
-  _REL_DIR="$(dirname "$_REL_PATH")"
-  if [[ "$_REL_DIR" != "." && -n "$_REL_DIR" && "$_REL_DIR" != "/" ]]; then
-    if [[ "$OUTPUT_DIR" != *"$_REL_DIR" ]]; then
-      OUTPUT_DIR="$OUTPUT_DIR/$_REL_DIR"
-    fi
-  fi
-fi
 
 VENV_WHISPER="$ROOT_DIR/.venv/bin/whisper"
 WHISPER_CPP_BIN="$(command -v whisper-cli 2>/dev/null || echo "/opt/homebrew/bin/whisper-cli")"
@@ -67,9 +57,20 @@ FILENAME_NOEXT="${BASENAME%.*}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Diretório de saída dedicado para este vídeo específico
-if [[ "$OUTPUT_DIR" == *"/$FILENAME_NOEXT" ]]; then
+# Se OUTPUT_DIR já terminar com o nome do vídeo, já é o diretório final dedicado passado pelo dashboard/servidor
+if [[ "$OUTPUT_DIR" == *"/$FILENAME_NOEXT" || "$(basename "$OUTPUT_DIR")" == "$FILENAME_NOEXT" ]]; then
   VIDEO_OUTPUT_DIR="$OUTPUT_DIR"
 else
+  # Caso contrário (ex.: execução direta via CLI), espelha subpastas caso INPUT_DIR esteja definido
+  if [[ -n "${INPUT_DIR:-}" && "$VIDEO_PATH" == "$INPUT_DIR"* ]]; then
+    _REL_PATH="${VIDEO_PATH#$INPUT_DIR/}"
+    _REL_DIR="$(dirname "$_REL_PATH")"
+    if [[ "$_REL_DIR" != "." && -n "$_REL_DIR" && "$_REL_DIR" != "/" ]]; then
+      if [[ "$OUTPUT_DIR" != *"$_REL_DIR"* ]]; then
+        OUTPUT_DIR="$OUTPUT_DIR/$_REL_DIR"
+      fi
+    fi
+  fi
   VIDEO_OUTPUT_DIR="$OUTPUT_DIR/$FILENAME_NOEXT"
 fi
 

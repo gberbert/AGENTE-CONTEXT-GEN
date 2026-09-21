@@ -1,43 +1,42 @@
 # CURRENT TASK
 
-Task ID: TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO
+Task ID: TASK-20260920-2252-GIT-COMMIT-AND-PUSH
 
-Created: 2026-09-20 16:05 America/Sao_Paulo
+Created: 2026-09-20 22:52 America/Sao_Paulo
 
-Status: COMPLETED (2026-09-20 16:09)
+Status: COMPLETED (2026-09-20 22:52)
 
-Resume Authorization: NO (concluído)
+Resume Authorization: NO (concluído e versionado)
 
 ---
 
 ## User Request
 
-"antes configure um .gitignere completo"
-(contexto anterior: "crie um rep no git agora e faca o push")
+"atualize o git"
 
 ---
 
 ## Objective
 
-Configurar um `.gitignore` completo, robusto e padronizado para o projeto Axet Video Pipeline, isolando:
-1. Modelos de IA pesados (>100MB, Whisper ggml bin);
-2. Vídeos de entrada (.mp4, .mkv, .mov, etc.);
-3. Saídas e artefatos de execução (`output/*`), mantendo `.gitkeep`;
-4. Ambiente virtual Python (`.venv/`) e caches (`__pycache__/`);
-5. Dependências Node e logs (`node_modules/`, `*.log`);
-6. Arquivos e caches internos do Axet (`.axet-code/`);
-7. Arquivos temporários e artefatos de sessão transitórios conforme regras de `AGENTS.md` (`.graphify/`, `smoke-run/`, `legacy_piloto/`, `scratch/`, `_*.*`, `*.tmp`, `*.temp`, `*.bak`, `test_segment.*`);
-8. Arquivos de sistema e IDEs (`.DS_Store`, `.idea/`, mantendo `.vscode/settings.json`);
-9. Credenciais e variáveis de ambiente sensíveis (`.env*`, `*.key`, `*.pem`, `credentials.json`).
+Sincronizar as alterações do projeto com o repositório Git local e remoto (GitHub):
+1. Atualizar registro de versões em `versionamento.md` (v0.9.0).
+2. Adicionar arquivos modificados e manifesto do lote ao stage do Git.
+3. Realizar commit atômico e semântico.
+4. Executar push para a branch `main` no remote `origin`.
 
-Em seguida, preparar o repositório Git local com `.gitkeep` estruturais, validar a exclusão das pastas pesadas e proceder com as etapas de versionamento/push solicitadas.
+Garantir que o sistema AXET Video Pipeline possua persistência completa de estado do lote de vídeos e capacidade comprovada de retomada inteligente ("reiniciar de onde parou"):
+1. Persistir atomicamente o estado da fila em arquivo (`batch_manifest.json`) a cada evento de conclusão ou erro.
+2. Identificar e reconhecer automaticamente os 287 vídeos já processados e validados no disco (`*_resumo_*.md` > 150 bytes), garantindo que nunca sejam reprocessados.
+3. Permitir retomada segura do lote através do Cockpit Web e da API (`skipCompleted: true`), enfileirando apenas os vídeos pendentes ou com erro.
+4. Salvar backup e recuperar o estado em caso de reinício do servidor Node.
 
 ---
 
 ## Plan
 
-1. Registrar `TASK-20260920-1605-SETUP-GITIGNORE-AND-REPO` em `current_task.md`, `state.md` e `execution_journal.md`.
-2. Criar `.gitkeep` estruturais em `videos/`, `output/`, `output/logs/` e `models/`.
-3. Escrever `.gitignore` abrangente cobrindo todas as categorias do projeto.
-4. Validar as regras do `.gitignore` com `git check-ignore` e simulação de `git status`.
-5. Registrar checkpoint de validação em `execution_journal.md` e atualizar `state.md`.
+1. Snapshot de emergência do estado ao vivo já capturado e salvo em `.agent/batch_state_snapshot.json` (287 concluídos, 335 erros).
+2. Criar plano de implementação detalhado em `implementation_plan.md` e aguardar aprovação do usuário.
+3. Implementar persistência atômica (`saveBatchManifest`, `loadBatchManifest`) e detector de arquivos concluídos em `dashboard/server.js`.
+4. Atualizar endpoints `/api/batch/scan`, `/api/batch/start` e criar `/api/batch/resume` com salvaguarda `skipCompleted`.
+5. Atualizar frontend (`dashboard/index.html`, `dashboard/app.js`) com botão de retomada rápida e tags de vídeos concluídos.
+6. Validar detecção dos 287 arquivos no disco e simular retomada segura.

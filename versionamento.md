@@ -4,6 +4,29 @@ Este projeto não possui `package.json` nem repositório git no momento da cria�
 
 Formato: `[VERSÃO] - AAAA-MM-DD` seguido de lista de mudanças.
 
+## [0.9.0] - 2026-09-20
+
+### Adicionado / Aprimorado
+
+- **Persistência Contínua de Lote e Manifesto de Estado (`batch_manifest.json`)**:
+  - `dashboard/server.js`: implementadas funções `saveBatchManifest()` e `loadBatchManifest()`, persistindo atomicamente o estado da fila tanto no workspace (`.agent/batch_manifest.json`) quanto na pasta de saída (`outputDir/batch_manifest.json`);
+  - `dashboard/server.js`: auto-recuperação de estado ativada na inicialização do servidor Node, restaurando o lote anterior sem perda de progresso;
+  - `dashboard/server.js`: inclusão do campo `markdownPath` no snapshot do lote para rastreamento de relatórios gerados.
+
+- **Detecção Dual de Conclusão e Prevenção de Retrabalho**:
+  - `dashboard/server.js`: função `checkItemCompletedOnDisk()` com normalização Unicode (NFC) para compatibilidade perfeita com acentos no macOS/OneDrive ("Presentación", "Módulo", "Grabación"), verificando fisicamente se o relatório Markdown (`*_resumo_*.md` > 150 bytes) existe em disco;
+  - Reconhecimento automático com 100% de acurácia dos 287 vídeos já processados anteriormente.
+
+- **Retomada Inteligente do Lote (Resume de Onde Parou)**:
+  - `dashboard/server.js`: novo endpoint `POST /api/batch/resume` e parâmetro `skipCompleted: true` em `POST /api/batch/start`, preservando vídeos concluídos e enfileirando apenas vídeos pendentes ou que falharam;
+  - `dashboard/index.html` e `dashboard/style.css`: novo botão de destaque `⏯ Retomar de Onde Parou` (`.btn-resume`) e checkbox de salvaguarda `🛡️ Pular vídeos já concluídos`;
+  - `dashboard/app.js`: integração reativa, desativação de retrabalho e tags visuais verdes `✓ Concluído` na tabela de fila.
+
+- **Resolução Limpa de Pastas de Saída**:
+  - `scripts/process_video.sh`: ajustada a resolução de diretórios para evitar criação de subpastas duplicadas quando executado a partir do dashboard.
+
+---
+
 ## [0.8.1] - 2026-09-20
 
 ### Corrigido

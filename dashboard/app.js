@@ -905,7 +905,9 @@ function formatBytes(bytes) {
 }
 
 const batchStartBtn = $("batch-start-btn");
+const batchResumeBtn = $("batch-resume-btn");
 const batchStopBtn = $("batch-stop-btn");
+const batchSkipCompleted = $("batch-skip-completed");
 const batchStatusBadge = $("batch-status-badge");
 const batchInputDir = $("batch-input-dir");
 const batchOutputDir = $("batch-output-dir");
@@ -1117,6 +1119,7 @@ function renderBatchState(batch) {
   if (btnBrowseInput) btnBrowseInput.disabled = isRunning || isStopping;
   if (btnBrowseOutput) btnBrowseOutput.disabled = isRunning || isStopping;
   if (btnScanVideos) btnScanVideos.disabled = isRunning || isStopping;
+  if (batchSkipCompleted) batchSkipCompleted.disabled = isRunning || isStopping;
 
   if (batchWhisperModel && batch.whisperModel) batchWhisperModel.value = batch.whisperModel;
   if (batchWhisperLang && batch.whisperLanguage) batchWhisperLang.value = batch.whisperLanguage;
@@ -1124,6 +1127,22 @@ function renderBatchState(batch) {
 
   // Atualiza estatísticas
   const stats = batch.stats || { total: 0, running: 0, completed: 0, pending: 0, errors: 0, cancelled: 0 };
+  const hasCompleted = (stats.completed || 0) > 0;
+  const hasRemaining = (stats.pending || 0) > 0 || (stats.errors || 0) > 0 || (stats.cancelled || 0) > 0;
+
+  if (batchResumeBtn) {
+    if (isRunning || isStopping) {
+      batchResumeBtn.disabled = true;
+      batchResumeBtn.style.display = "none";
+    } else if (hasCompleted && hasRemaining) {
+      batchResumeBtn.disabled = false;
+      batchResumeBtn.style.display = "inline-flex";
+      batchResumeBtn.title = `Retomar: ${stats.completed} já prontos, ${(stats.pending || 0) + (stats.errors || 0) + (stats.cancelled || 0)} restantes`;
+    } else {
+      batchResumeBtn.style.display = "none";
+    }
+  }
+
   if (statTotal) statTotal.textContent = stats.total;
   if (statRunning) statRunning.textContent = stats.running;
   if (statCompleted) statCompleted.textContent = stats.completed;
@@ -1350,11 +1369,11 @@ function getPipelineStepInfo(item) {
 
   if (item.status === "completed") {
     return {
-      label: "[4/4] Concluído",
+      label: "✓ Concluído",
       stepNum: 4,
       pct: 100,
       badgeClass: "step-completed",
-      subtext: "Todas as 4 etapas finalizadas",
+      subtext: item.currentStepMessage || (item.markdownPath ? `Relatório: ${item.markdownPath.split("/").pop()}` : "Relatório validado no disco"),
     };
   }
 
@@ -1483,11 +1502,14 @@ function renderQueueTable(queue) {
       }
 
       let runCol = "—";
-      if (item.runId) {
-        runCol = `<span class="queue-run-id" title="${item.runId}">run #${item.runId.slice(-8)}</span>`;
-        if (item.status === "completed") {
-          runCol += `<div style="font-size: 10px; color: #10b981; margin-top: 3px;" title="Arquivos salvos na pasta espelhada">✓ Salvo na subpasta</div>`;
+      if (item.status === "completed") {
+        const reportName = item.markdownPath ? item.markdownPath.split("/").pop() : "";
+        runCol = `<span class="queue-run-id" style="color: #10b981; font-weight: 600;" title="${escapeHtml(item.markdownPath || item.runId || '')}">✓ Concluído</span>`;
+        if (reportName) {
+          runCol += `<div style="font-size: 10px; color: var(--text-dim); margin-top: 3px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(reportName)}">${escapeHtml(reportName)}</div>`;
         }
+      } else if (item.runId) {
+        runCol = `<span class="queue-run-id" title="${item.runId}">run #${item.runId.slice(-8)}</span>`;
       }
 
       let cloudBadge = "";
@@ -1589,25 +1611,18 @@ async function scanVideos() {
       return;
     }
 
+    const completedCount = data.completedCount || 0;
+    const pendingCount = data.pendingCount || (data.count - completedCount);
     if (scanCountBadge) {
-      scanCountBadge.textContent = `${data.count} vídeos encontrados em pastas e subpastas!`;
+      scanCountBadge.textContent = `${data.count} vídeos na árvore (${completedCount} já concluídos, ${pendingCount} a processar)`;
       scanCountBadge.className = "scan-badge active";
     }
-    if (queueSummaryCount) queueSummaryCount.textContent = `${data.count} vídeos`;
+    if (queueSummaryCount) queueSummaryCount.textContent = `${data.count} vídeos (${completedCount} concluídos)`;
 
-    const previewQueue = (data.videos || []).map((v) => ({
-      id: v.id,
-      relativePath: v.relativePath,
-      filename: v.filename,
-      sizeBytes: v.sizeBytes,
-      status: "pending",
-      duration_s: null,
-      runId: null,
-    }));
-    renderQueueTable(previewQueue);
+    renderQueueTable(data.videos || []);
 
     // Atualiza imediatamente o volume total dos vídeos detectados na varredura
-    const totalScanBytes = previewQueue.reduce((acc, q) => acc + (q.sizeBytes || 0), 0);
+    const totalScanBytes = (data.videos || []).reduce((acc, q) => acc + (q.sizeBytes || 0), 0);
     if (metricVolume) {
       metricVolume.textContent = `0 MB / ${formatBytes(totalScanBytes)}`;
     }
@@ -1727,13 +1742,14 @@ async function loadFolderBrowser(targetDir) {
 // Disparo e Interrupção do Lote
 // ---------------------------------------------------------------------------
 
-async function startBatchExecution() {
+async function startBatchExecution(isResume = false) {
   const inputDir = (batchInputDir.value || "").trim();
   const outputDir = (batchOutputDir.value || "").trim();
   const parallelism = parseInt(batchParallelism.value, 10) || 2;
   const whisperModel = (batchWhisperModel.value || "small").trim();
   const whisperLanguage = (batchWhisperLang ? batchWhisperLang.value : "es").trim().toLowerCase();
   const axetModel = (batchAxetModel ? batchAxetModel.value : "gpt-5.6-terra").trim();
+  const skipCompleted = batchSkipCompleted ? batchSkipCompleted.checked : true;
 
   if (!inputDir) {
     alert("Informe o diretório de entrada de vídeos.");
@@ -1745,21 +1761,25 @@ async function startBatchExecution() {
   }
 
   if (batchStartBtn) batchStartBtn.disabled = true;
+  if (batchResumeBtn) batchResumeBtn.disabled = true;
   if (batchStatusBadge) {
-    batchStatusBadge.textContent = "Iniciando...";
+    batchStatusBadge.textContent = isResume ? "Retomando..." : "Iniciando...";
     batchStatusBadge.className = "batch-badge running";
   }
 
+  const endpoint = isResume ? "/api/batch/resume" : "/api/batch/start";
+
   try {
-    const res = await fetch("/api/batch/start", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inputDir, outputDir, parallelism, whisperModel, whisperLanguage, axetModel }),
+      body: JSON.stringify({ inputDir, outputDir, parallelism, whisperModel, whisperLanguage, axetModel, skipCompleted }),
     });
     const data = await res.json();
     if (!data.ok) {
       alert(`Falha ao iniciar processamento: ${data.error}`);
       if (batchStartBtn) batchStartBtn.disabled = false;
+      if (batchResumeBtn) batchResumeBtn.disabled = false;
       if (batchStatusBadge) {
         batchStatusBadge.textContent = "Pronto";
         batchStatusBadge.className = "batch-badge";
@@ -1771,6 +1791,7 @@ async function startBatchExecution() {
   } catch (err) {
     alert(`Erro de rede ao iniciar lote: ${err.message}`);
     if (batchStartBtn) batchStartBtn.disabled = false;
+    if (batchResumeBtn) batchResumeBtn.disabled = false;
   }
 }
 
@@ -1895,7 +1916,8 @@ if (batchParallelism) {
   });
 }
 
-if (batchStartBtn) batchStartBtn.addEventListener("click", startBatchExecution);
+if (batchStartBtn) batchStartBtn.addEventListener("click", () => startBatchExecution(false));
+if (batchResumeBtn) batchResumeBtn.addEventListener("click", () => startBatchExecution(true));
 if (batchStopBtn) batchStopBtn.addEventListener("click", stopBatchExecution);
 
 if (folderModalClose) folderModalClose.addEventListener("click", closeFolderModal);
