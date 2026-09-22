@@ -57,18 +57,17 @@ FILENAME_NOEXT="${BASENAME%.*}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 # Diretório de saída dedicado para este vídeo específico
-# Se OUTPUT_DIR já terminar com o nome do vídeo, já é o diretório final dedicado passado pelo dashboard/servidor
-if [[ "$OUTPUT_DIR" == *"/$FILENAME_NOEXT" || "$(basename "$OUTPUT_DIR")" == "$FILENAME_NOEXT" ]]; then
+# Se OUTPUT_DIR foi fornecido explicitamente pelo dashboard server, usa-o diretamente como destino final
+if [[ -n "${OUTPUT_DIR:-}" && "$OUTPUT_DIR" != "$ROOT_DIR/output" ]]; then
   VIDEO_OUTPUT_DIR="$OUTPUT_DIR"
 else
-  # Caso contrário (ex.: execução direta via CLI), espelha subpastas caso INPUT_DIR esteja definido
+  OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/output}"
+  # Caso contrário (execução direta via CLI), espelha subpastas caso INPUT_DIR esteja definido
   if [[ -n "${INPUT_DIR:-}" && "$VIDEO_PATH" == "$INPUT_DIR"* ]]; then
     _REL_PATH="${VIDEO_PATH#$INPUT_DIR/}"
     _REL_DIR="$(dirname "$_REL_PATH")"
     if [[ "$_REL_DIR" != "." && -n "$_REL_DIR" && "$_REL_DIR" != "/" ]]; then
-      if [[ "$OUTPUT_DIR" != *"$_REL_DIR"* ]]; then
-        OUTPUT_DIR="$OUTPUT_DIR/$_REL_DIR"
-      fi
+      OUTPUT_DIR="$OUTPUT_DIR/$_REL_DIR"
     fi
   fi
   VIDEO_OUTPUT_DIR="$OUTPUT_DIR/$FILENAME_NOEXT"
@@ -118,6 +117,13 @@ safe_cleanup_temp() {
 AUDIO_PATH="$VIDEO_OUTPUT_DIR/${FILENAME_NOEXT}_${RUN_ID}_audio.wav"
 TRANSCRIPT_TXT="$VIDEO_OUTPUT_DIR/${FILENAME_NOEXT}_${RUN_ID}.txt"
 FINAL_MD="$VIDEO_OUTPUT_DIR/${FILENAME_NOEXT}_resumo_${RUN_ID}.md"
+
+# Salvaguarda de limite de caminho do OneDrive (máx 400 caracteres no macOS / SharePoint)
+if [[ ${#FINAL_MD} -gt 300 ]]; then
+  AUDIO_PATH="$VIDEO_OUTPUT_DIR/audio_${RUN_ID}.wav"
+  TRANSCRIPT_TXT="$VIDEO_OUTPUT_DIR/transcricao_${RUN_ID}.txt"
+  FINAL_MD="$VIDEO_OUTPUT_DIR/resumo_${RUN_ID}.md"
+fi
 
 now_iso() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -254,6 +260,9 @@ on_sigterm_trap() {
 }
 trap on_sigterm_trap TERM INT
 
+CURRENT_STEP=""
+LAST_ERROR_MSG=""
+
 # Garante que, em caso de erro em qualquer etapa, o run_end seja emitido
 # como "error" (ou "cancelled", se cancelado manualmente) para o dashboard
 # não ficar travado em "running".
@@ -267,7 +276,13 @@ on_error_trap() {
       emit_log "WARN" "" "Pipeline cancelado manualmente pelo usuário."
       emit_run_end "cancelled" "$total_dur"
     else
-      emit_log "ERROR" "" "Pipeline finalizado com erro (exit code $exit_code)."
+      local err_desc="${LAST_ERROR_MSG:-Pipeline finalizado com erro (exit code $exit_code).}"
+      if [[ -n "$CURRENT_STEP" ]]; then
+        emit_step_end "$CURRENT_STEP" "error" 0 "$err_desc"
+        emit_log "ERROR" "$CURRENT_STEP" "$err_desc"
+      else
+        emit_log "ERROR" "" "$err_desc"
+      fi
       emit_run_end "error" "$total_dur"
     fi
   fi
@@ -290,13 +305,31 @@ start_heartbeat
 emit_log "INFO" "" "Pipeline iniciado para o vídeo '$BASENAME'."
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # 1. Extração de áudio com ffmpeg
 # ---------------------------------------------------------------------------
 STEP1_START=$(date +%s)
+CURRENT_STEP="extracao_audio"
 echo
 echo "[1/4] Extraindo áudio do vídeo com ffmpeg..."
 emit_step_start "extracao_audio"
 emit_log "INFO" "extracao_audio" "Iniciando extração de áudio com ffmpeg."
+
+# Diagnóstico prévio de integridade (OneDrive / CloudStorage Dataless)
+IS_DATALESS=false
+if ls -lO "$VIDEO_PATH" 2>/dev/null | grep -q "dataless"; then
+  IS_DATALESS=true
+elif ! head -c 1 "$VIDEO_PATH" >/dev/null 2>&1; then
+  IS_DATALESS=true
+fi
+
+if [[ "$IS_DATALESS" == true ]]; then
+  LAST_ERROR_MSG="Vídeo no OneDrive está como 'dataless' (apenas na nuvem / 0 bytes locais). Baixe o arquivo no Finder ('Sempre manter neste dispositivo') antes de processar."
+  echo "ERRO [extracao_audio]: $LAST_ERROR_MSG" >&2
+  emit_log "ERROR" "extracao_audio" "$LAST_ERROR_MSG"
+  emit_step_end "extracao_audio" "error" 0 "$LAST_ERROR_MSG"
+  exit 196
+fi
 
 EFFECTIVE_VIDEO_PATH="$VIDEO_PATH"
 IS_TMP_VIDEO=false
@@ -304,13 +337,37 @@ IS_TMP_VIDEO=false
 if [[ "${STAGE_VIDEO_TO_TMP:-false}" == "true" ]]; then
   TEMP_VIDEO_FILE="$TEMP_WORKSPACE/$BASENAME"
   emit_log "INFO" "extracao_audio" "Copiando vídeo para área temporária de trabalho (/tmp/axet-workspace)..."
-  cp "$VIDEO_PATH" "$TEMP_VIDEO_FILE"
+  if ! cp "$VIDEO_PATH" "$TEMP_VIDEO_FILE" 2>"$TEMP_WORKSPACE/cp_error.log"; then
+    CP_ERR="$(head -n 2 "$TEMP_WORKSPACE/cp_error.log" 2>/dev/null | tr '
+' ' ')"
+    LAST_ERROR_MSG="Falha ao copiar vídeo do OneDrive: ${CP_ERR:-erro de I/O}"
+    echo "ERRO [extracao_audio]: $LAST_ERROR_MSG" >&2
+    emit_log "ERROR" "extracao_audio" "$LAST_ERROR_MSG"
+    emit_step_end "extracao_audio" "error" 0 "$LAST_ERROR_MSG"
+    exit 1
+  fi
   EFFECTIVE_VIDEO_PATH="$TEMP_VIDEO_FILE"
   IS_TMP_VIDEO=true
 fi
 
-ffmpeg -y -nostdin -i "$EFFECTIVE_VIDEO_PATH" -vn -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_PATH" \
-  -loglevel error </dev/null
+FFMPEG_ERR_LOG="$TEMP_WORKSPACE/ffmpeg_stderr.log"
+if ! ffmpeg -y -nostdin -i "$EFFECTIVE_VIDEO_PATH" -vn -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_PATH" \
+  -loglevel error 2>"$FFMPEG_ERR_LOG" </dev/null; then
+  STEP1_DUR=$(( $(date +%s) - STEP1_START ))
+  FFMPEG_ERR_TEXT="$(tr '
+' ' ' < "$FFMPEG_ERR_LOG" 2>/dev/null | sed 's/  */ /g' | head -c 250)"
+  if [[ "$FFMPEG_ERR_TEXT" == *"Operation timed out"* ]]; then
+    LAST_ERROR_MSG="Timeout de I/O no OneDrive: arquivo em nuvem inacessível. O macOS retornou 'Operation timed out'."
+  elif [[ -n "$FFMPEG_ERR_TEXT" ]]; then
+    LAST_ERROR_MSG="Falha no ffmpeg: $FFMPEG_ERR_TEXT"
+  else
+    LAST_ERROR_MSG="Falha desconhecida no ffmpeg durante extração do áudio."
+  fi
+  echo "ERRO [extracao_audio]: $LAST_ERROR_MSG" >&2
+  emit_log "ERROR" "extracao_audio" "$LAST_ERROR_MSG"
+  emit_step_end "extracao_audio" "error" "$STEP1_DUR" "$LAST_ERROR_MSG"
+  exit 1
+fi
 
 # OTIMIZAÇÃO CRÍTICA DE ARMAZENAMENTO:
 # Se o vídeo foi processado a partir de área temporária /tmp, remove-o IMEDIATAMENTE
@@ -326,12 +383,14 @@ STEP1_DUR=$(( $(date +%s) - STEP1_START ))
 echo "      -> Áudio extraído: $AUDIO_PATH"
 emit_log "INFO" "extracao_audio" "Áudio extraído com sucesso: $(basename "$AUDIO_PATH")."
 emit_step_end "extracao_audio" "success" "$STEP1_DUR" "Áudio extraído: $(basename "$AUDIO_PATH")"
+CURRENT_STEP=""
 
 # ---------------------------------------------------------------------------
 # 2. Transcrição com Whisper (modelo local, sem API externa)
 # ---------------------------------------------------------------------------
 STEP2_START=$(date +%s)
 echo
+CURRENT_STEP="transcricao_whisper"
 emit_step_start "transcricao_whisper"
 
 GGML_MODEL_FILE="$GGML_MODEL_DIR/ggml-${WHISPER_MODEL}.bin"
@@ -475,6 +534,14 @@ fi
 STEP2_DUR=$(( $(date +%s) - STEP2_START ))
 echo "      -> Transcrição gerada: $TRANSCRIPT_TXT"
 emit_log "INFO" "transcricao_whisper" "Transcrição gerada com sucesso: $(basename "$TRANSCRIPT_TXT")."
+
+# Remoção imediata do áudio WAV temporário para economizar espaço e evitar sincronização pesada no OneDrive
+if [[ -f "$AUDIO_PATH" ]]; then
+  rm -f "$AUDIO_PATH" 2>/dev/null || true
+  emit_log "INFO" "transcricao_whisper" "Áudio WAV temporário removido após transcrição."
+fi
+
+CURRENT_STEP=""
 emit_step_end "transcricao_whisper" "success" "$STEP2_DUR" "Transcrição: $(basename "$TRANSCRIPT_TXT")"
 
 # ---------------------------------------------------------------------------
@@ -483,6 +550,7 @@ emit_step_end "transcricao_whisper" "success" "$STEP2_DUR" "Transcrição: $(bas
 STEP3_START=$(date +%s)
 echo
 echo "[3/4] Interpretando a transcrição com axet-code (modelo: $AXET_MODEL_LABEL)..."
+CURRENT_STEP="interpretacao_axet"
 emit_step_start "interpretacao_axet"
 emit_log "INFO" "interpretacao_axet" "Iniciando análise avançada com axet-code (modelo: $AXET_MODEL_LABEL)."
 
@@ -553,6 +621,7 @@ fi
 STEP3_DUR=$(( $(date +%s) - STEP3_START ))
 echo "      -> Análise avançada gerada pelo axet-code (${STEP3_DUR}s)."
 emit_log "INFO" "interpretacao_axet" "Análise avançada gerada com sucesso pelo axet-code."
+CURRENT_STEP=""
 emit_step_end "interpretacao_axet" "success" "$STEP3_DUR" "Análise avançada concluída."
 
 # ---------------------------------------------------------------------------
@@ -561,6 +630,7 @@ emit_step_end "interpretacao_axet" "success" "$STEP3_DUR" "Análise avançada co
 STEP4_START=$(date +%s)
 echo
 echo "[4/4] Montando o relatório final em Markdown..."
+CURRENT_STEP="geracao_markdown"
 emit_step_start "geracao_markdown"
 emit_log "INFO" "geracao_markdown" "Montando relatório final em Markdown."
 
@@ -595,6 +665,7 @@ fi
 STEP4_DUR=$(( $(date +%s) - STEP4_START ))
 echo "      -> Relatório final salvo em: $FINAL_MD (validado: ${FINAL_MD_SIZE} bytes)"
 emit_log "INFO" "geracao_markdown" "Relatório final validado e salvo com sucesso: $(basename "$FINAL_MD")."
+CURRENT_STEP=""
 emit_step_end "geracao_markdown" "success" "$STEP4_DUR" "Relatório: $(basename "$FINAL_MD")"
 
 # Limpeza garantida da área temporária de trabalho (/tmp/axet-workspace)

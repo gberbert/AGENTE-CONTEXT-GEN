@@ -4,6 +4,26 @@ Este projeto não possui `package.json` nem repositório git no momento da cria�
 
 Formato: `[VERSÃO] - AAAA-MM-DD` seguido de lista de mudanças.
 
+## [0.10.0] - 2026-09-22
+
+### Adicionado / Aprimorado
+
+- **Suporte Multi-formato Estendido no Pipeline de Documentos (`scripts/extract_document.py`)**:
+  - Implementado parser de **HTML / Web (`.html`, `.htm`, `.xhtml`)** com sanitização de ruídos (remoção de scripts, styles, navegação e rodapé), extração de títulos e tabelas, e conversão fiel para Markdown via `BeautifulSoup` e `markdownify`.
+  - Implementado parser de **Planilhas Excel (`.xlsx`, `.xls`)** via `openpyxl` e `markitdown`, convertendo cada aba em tabelas Markdown estruturadas com cabeçalhos preservados.
+  - Implementado parser de **Dados Tabulares Delimitados (`.csv`, `.tsv`)** com detecção automática de delimitadores e conversão tabular nativa para Markdown.
+  - Implementado parser de **Texto e Markdown (`.txt`, `.md`, `.markdown`, `.rtf`)** com tolerância multi-encoding (UTF-8, Latin-1, CP1252).
+  - Implementado parser de **Dados Estruturados (`.json`, `.jsonl`, `.xml`)** com indentação e blocos de código semânticos.
+  - Fallback universal para formatos **OpenDocument (`.odt`, `.ods`, `.odp`)** e documentos legados via `markitdown`.
+
+- **Reconhecimento e Telemetria no Cockpit (`dashboard/server.js`, `dashboard/app.js`, `dashboard/style.css`)**:
+  - `dashboard/server.js`: expandido `DOCUMENT_EXTENSIONS` para incluir todos os novos formatos de mercado na varredura recursiva de diretórios.
+  - `dashboard/server.js`: adicionado **Watchdog Auto-Pump** a cada 5 segundos para garantir que a fila nunca fique travada caso o número de workers caia para zero durante salvaguardas temporárias de disco.
+  - `dashboard/app.js`: adicionados badges visuais específicos na tabela de fila: `🌐 HTML`, `📈 TABELA`, `⚙️ DADOS` e `📋 TEXTO`.
+  - `dashboard/style.css`: adicionadas cores temáticas para cada tipo de mídia identificada.
+
+---
+
 ## [0.9.0] - 2026-09-20
 
 ### Adicionado / Aprimorado

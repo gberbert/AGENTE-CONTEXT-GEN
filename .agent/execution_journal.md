@@ -1635,3 +1635,64 @@ State: AFTER_ACTION
 ### Next Safe Action
 
 Executar git commit e git push, reportando a confirmação remota ao usuário.
+
+## 2026-09-21T03:03:00-03:00 - Planejamento: Ingestão de Documentos (PDF, DOCX, PPTX) para RAG
+- Instaladas dependências de parsing no ambiente virtual `.venv/`: `pypdf`, `python-docx`, `python-pptx` e `markitdown`.
+- Criado o plano detalhado de implementação multimodal (`implementation_plan.md`).
+- Arquitetura desenhada para suportar modo de ingestão unificado no Cockpit: Vídeos, Documentos ou Ambos.
+- Aguardando aprovação do usuário para execução.
+
+## 2026-09-21T03:21:00-03:00 - Conclusão: Ingestão Multimodal de Documentos e Vídeos com RAG
+- Criado o parser multi-formato `scripts/extract_document.py` para PDF, DOCX e PPTX.
+- Criado o prompt de alta densidade `prompts/analise_documento_rag.md` com suporte a diagramas Mermaid, tabelas reconstruídas, bateria sintética de Q&A para busca vetorial e regras estritas anti-alucinação.
+- Criado o script executável `scripts/process_document.sh` integrado à telemetria do Cockpit.
+- Atualizado o backend `dashboard/server.js` com o despachante polimórfico de workers e suporte a modos de ingestão (`all`, `videos`, `documents`).
+- Atualizado o frontend (`index.html`, `app.js`, `style.css`) com o Seletor de Modo de Ingestão (`Ambos`, `Vídeos`, `Docs`), contadores dedicados e badges visuais por extensão (`.pdf`, `.docx`, `.pptx`).
+- Testado e validado end-to-end com documento real (`TRON lista identificacion servidores.docx`) gerando relatório RAG completo.
+- Testado no navegador via browser subagent com sucesso visual completo.
+
+## [2026-09-21T03:45:00-03:00] Checkpoint: Correção de Contagem e Deduplicação Canônica de Lote
+
+### 1. Problemas Identificados
+- **Soma indevida de arquivos e vídeos**: O manifesto continha 2.680 itens no total (623 vídeos e 2.057 documentos), mas por falta de propriedade `mediaType` canônica nos dados persistidos, todos os 2.057 documentos caíam no fallback `"video"`. Com isso, o badge exibia `2680 🎬 Vídeos` e `0 📄 Docs`.
+- **Arquivos duplicados**: Identificadas 11 duplicatas de mesmo nome e tamanho em bytes (8 vídeos grandes e 3 documentos PDF), que causariam reprocessamento redundante de horas de GPU/Whisper.
+
+### 2. Mudanças e Soluções
+- `dashboard/server.js`:
+  - Adicionadas funções `getMediaType(item)` e `getItemExtension(item)`.
+  - Criada função `deduplicateItems(items)` que indexa por `nome_normalizado_nfc:::tamanho_bytes` e prioriza a preservação de arquivos com relatório Markdown já concluído (`completed`).
+  - Adicionado `masterQueue` e `filterQueueByMode()` para alternância instantânea entre modos no Cockpit (`all`, `videos`, `documents`).
+  - `/api/batch/scan` e `/api/batch/start` agora preservam `mediaType` e aplicam `deduplicateItems`.
+- `dashboard/app.js`:
+  - `saveBatchConfigToServer` agora retorna o payload atualizado do lote.
+  - Alternância de abas (`Ambos` / `Vídeos` / `Docs`) atualiza os badges, a barra de progresso e a tabela da fila instantaneamente.
+- `.agent/batch_manifest.json`:
+  - Deduplicado de 2.680 itens para 2.669 itens únicos.
+
+### 3. Validação
+- **Modo Ambos**: 2.669 total | 615 vídeos | 2.054 docs | 389 concluídos (388 vídeos, 1 doc) | 2.280 pendentes.
+- **Modo Vídeos**: 615 total | 615 vídeos | 0 docs | 388 concluídos | 227 pendentes.
+- **Modo Docs**: 2.054 total | 0 vídeos | 2.054 docs | 1 concluído | 2.053 pendentes.
+
+## 2026-09-21T04:08:00-03:00 - BEFORE_ACTION: Conformidade do Relatório RAG Estruturado
+- **Task ID:** TASK-20260921-ANALISE-DOCUMENTO-RAG
+- **Ação planejada:** Ajustar `scripts/process_document.sh` para preservar como artefato final exclusivamente a resposta estruturada produzida pelo template `prompts/analise_documento_rag.md`.
+- **Motivo:** A etapa de geração acrescenta cabeçalho operacional e duplica o conteúdo bruto integral após a resposta da IA; o template já exige a seção 9 como referência fiel. A duplicação reduz a precisão de recuperação Dense Retrieval + BM25.
+- **Estado confirmado:** O template contém as nove seções obrigatórias, o marcador `{{CONTEUDO_DOCUMENTO}}` e a política anti-alucinação; o conteúdo bruto é injetado no prompt antes da chamada ao modelo.
+- **Próxima ação segura:** Remover o wrapper de cabeçalho e a segunda transcrição da etapa `geracao_markdown`, gravando a saída estruturada diretamente em `FINAL_MD`, então validar sintaxe Bash.
+
+## 2026-09-21T04:08:00-03:00 - AFTER_ACTION: Conformidade do Relatório RAG Estruturado
+- **Task ID:** TASK-20260921-ANALISE-DOCUMENTO-RAG
+- **Alteração aplicada:** A etapa `geracao_markdown` de `scripts/process_document.sh` passou a gravar `AXET_OUTPUT` diretamente em `FINAL_MD` com `printf '%s\n'` e validação de arquivo não vazio.
+- **Resultado:** Removidos o cabeçalho operacional, a referência local ao prompt e a segunda cópia integral do conteúdo bruto. O documento final passa a depender exclusivamente da estrutura obrigatória gerada a partir de `prompts/analise_documento_rag.md`, cuja seção 9 já contém a referência fiel exigida.
+- **Validação:** `bash -n scripts/process_document.sh` e `.venv/bin/python -m py_compile scripts/extract_document.py` concluídos com sucesso. Busca no script não encontrou os marcadores removidos (`Relatório de Ingestão de Documento`, `Conteúdo Bruto Extraído`, `RAW_CONTENT`).
+- **Próxima ação segura:** Nenhuma; aguardar nova solicitação.
+
+## 2026-09-22T10:10:00-03:00 - AFTER_ACTION: Suporte a HTML (.html/.htm) e Formatos de Mercado no Pipeline
+- **Task ID:** TASK-20260922-EXTENSOES-DOCUMENTOS-MERCADO
+- **Alteração aplicada:**
+  1. `scripts/extract_document.py`: Adicionados parsers especializados para HTML (`BeautifulSoup` + `markdownify`), planilhas Excel (`openpyxl`), CSV/TSV com detecção automática de delimitadores, texto simples (`.txt`, `.md`) e dados estruturados (`.json`, `.jsonl`, `.xml`), com fallback para OpenDocument (`.odt`, `.ods`, `.odp`) e formatos legados via `markitdown`.
+  2. `dashboard/server.js`: Expandido `DOCUMENT_EXTENSIONS` para 17 novos formatos de mercado e implementado **Watchdog Auto-Pump** de 5s para proteção contra starvation da fila.
+  3. `dashboard/app.js`, `dashboard/style.css` e `dashboard/index.html`: Novos badges visuais (`🌐 HTML`, `📈 TABELA`, `⚙️ DADOS`, `📋 TEXTO`) e estilos cromáticos dedicados.
+- **Validação:** Testes automatizados executados para HTML, XLSX, CSV, TXT e JSON com 100% de sucesso na conversão estruturada para Markdown. Servidor reiniciado e validado em `http://localhost:4545`.
+- **Próxima ação segura:** Nenhuma ação pendente. Pipeline pronto para ingestão de qualquer formato de mercado.

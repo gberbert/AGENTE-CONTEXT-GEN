@@ -229,15 +229,79 @@ const VIDEO_EXTENSIONS = new Set([
   ".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".m4v", ".ts", ".wmv"
 ]);
 
+const DOCUMENT_EXTENSIONS = new Set([
+  // PDFs & Documentos de Texto / Office
+  ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".odt", ".odp", ".ods",
+  // Web & Hipertexto
+  ".html", ".htm", ".xhtml", ".xml",
+  // Texto Plano & Markdown
+  ".txt", ".md", ".markdown", ".rtf",
+  // Planilhas & Dados Tabulares
+  ".xlsx", ".xls", ".csv", ".tsv",
+  // Dados Estruturados
+  ".json", ".jsonl"
+]);
+
 const IGNORED_DIRS = new Set([
   ".git", ".venv", ".agent", ".cache", "node_modules", "scratch", ".system_generated"
 ]);
+
+function getMediaType(item) {
+  if (!item) return "video";
+  const ext = path.extname(item.filename || item.name || item.relativePath || "").toLowerCase();
+  if (DOCUMENT_EXTENSIONS.has(ext)) return "document";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
+  if (item.mediaType === "document" || (item.id && String(item.id).startsWith("doc_"))) return "document";
+  return "video";
+}
+
+function getItemExtension(item) {
+  if (!item) return "";
+  return path.extname(item.filename || item.name || item.relativePath || "").toLowerCase();
+}
+
+/**
+ * Remove duplicatas da lista de itens com base em mesmo nome de arquivo (normalizado em NFC)
+ * e mesmo tamanho em bytes (sizeBytes > 0).
+ * Se houver itens duplicados, prioriza o item já concluído ('completed') ou com markdownPath válido.
+ */
+function deduplicateItems(items) {
+  if (!Array.isArray(items) || items.length <= 1) return items || [];
+
+  const dedupMap = new Map();
+  for (const item of items) {
+    const rawName = item.filename || item.name || (item.relativePath ? path.basename(item.relativePath) : "");
+    const filename = rawName.normalize("NFC").toLowerCase();
+    const size = item.sizeBytes || 0;
+    const key = size > 0 ? `${filename}:::${size}` : `path:::${item.relativePath || item.id}`;
+
+    if (!dedupMap.has(key)) {
+      dedupMap.set(key, item);
+    } else {
+      const existing = dedupMap.get(key);
+      const isExistingCompleted = existing.status === "completed" || !!existing.markdownPath;
+      const isNewCompleted = item.status === "completed" || !!item.markdownPath;
+
+      if (!isExistingCompleted && isNewCompleted) {
+        dedupMap.set(key, item);
+      } else if (!isExistingCompleted && !isNewCompleted) {
+        const existingDepth = (existing.relativePath || "").split("/").length;
+        const newDepth = (item.relativePath || "").split("/").length;
+        if (newDepth < existingDepth) {
+          dedupMap.set(key, item);
+        }
+      }
+    }
+  }
+
+  return Array.from(dedupMap.values());
+}
 
 /**
  * Varre recursivamente um diretório raiz e todas as suas subpastas
  * em busca de arquivos de vídeo suportados.
  */
-function scanVideosRecursively(dirPath, rootDir = dirPath) {
+function scanFilesRecursively(dirPath, rootDir = dirPath, ingestionMode = batchState.ingestionMode || "all") {
   const results = [];
   if (!fs.existsSync(dirPath)) return results;
   try {
@@ -261,12 +325,19 @@ function scanVideosRecursively(dirPath, rootDir = dirPath) {
     if (entry.isDirectory()) {
       const lower = entry.name.toLowerCase();
       if (IGNORED_DIRS.has(lower)) continue;
-      // Não re-varrer a pasta de saída do lote caso esteja dentro da entrada
       if (batchState.outputDir && path.resolve(fullPath) === path.resolve(batchState.outputDir)) continue;
-      results.push(...scanVideosRecursively(fullPath, rootDir));
+      results.push(...scanFilesRecursively(fullPath, rootDir, ingestionMode));
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
-      if (VIDEO_EXTENSIONS.has(ext)) {
+      const isVideo = VIDEO_EXTENSIONS.has(ext);
+      const isDoc = DOCUMENT_EXTENSIONS.has(ext);
+
+      let include = false;
+      if (ingestionMode === "videos" && isVideo) include = true;
+      else if (ingestionMode === "documents" && isDoc) include = true;
+      else if (ingestionMode === "all" && (isVideo || isDoc)) include = true;
+
+      if (include) {
         let sizeBytes = 0;
         let allocatedBytes = 0;
         try {
@@ -276,11 +347,16 @@ function scanVideosRecursively(dirPath, rootDir = dirPath) {
         } catch (_) {}
         const isHydrated = allocatedBytes >= (sizeBytes * 0.9);
         const isOnlineOnly = allocatedBytes === 0 || allocatedBytes < 65536;
+        const mediaType = isDoc ? "document" : "video";
+        const prefix = isDoc ? "doc_" : "vid_";
+
         results.push({
-          id: `vid_${Buffer.from(path.relative(rootDir, fullPath)).toString("base64").replace(/=/g, "")}`,
+          id: `${prefix}${Buffer.from(path.relative(rootDir, fullPath)).toString("base64").replace(/=/g, "")}`,
           fullPath,
           relativePath: path.relative(rootDir, fullPath),
           filename: entry.name,
+          mediaType,
+          extension: ext,
           sizeBytes,
           allocatedBytes,
           isHydrated,
@@ -290,7 +366,15 @@ function scanVideosRecursively(dirPath, rootDir = dirPath) {
     }
   }
 
-  return results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const sorted = results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  if (dirPath === rootDir) {
+    return deduplicateItems(sorted);
+  }
+  return sorted;
+}
+
+function scanVideosRecursively(dirPath, rootDir = dirPath) {
+  return scanFilesRecursively(dirPath, rootDir, batchState.ingestionMode || "all");
 }
 
 /**
@@ -431,6 +515,7 @@ const batchState = {
   status: "idle", // 'idle' | 'scanning' | 'running' | 'stopping' | 'stopped' | 'completed'
   inputDir: path.join(ROOT_DIR, "videos"),
   outputDir: path.join(ROOT_DIR, "output"),
+  ingestionMode: "all", // 'all' | 'videos' | 'documents'
   parallelism: 2,
   whisperModel: "small",
   whisperLanguage: "es",
@@ -444,15 +529,121 @@ const batchState = {
 // Map de workerId -> { item, pid, child }
 const activeBatchWorkers = new Map();
 
-function updateBatchStats() {
-  const stats = { total: batchState.queue.length, pending: 0, running: 0, completed: 0, errors: 0, cancelled: 0 };
-  for (const item of batchState.queue) {
-    if (item.status === "pending") stats.pending++;
-    else if (item.status === "running") stats.running++;
-    else if (item.status === "completed") stats.completed++;
-    else if (item.status === "error") stats.errors++;
-    else if (item.status === "cancelled") stats.cancelled++;
+let masterQueue = [];
+
+function syncMasterQueueFromState() {
+  if (masterQueue.length === 0 && batchState.queue.length > 0) {
+    masterQueue = batchState.queue.map((item) => ({
+      ...item,
+      mediaType: getMediaType(item),
+      extension: item.extension || getItemExtension(item),
+    }));
+    return;
   }
+  const queueMap = new Map();
+  for (const item of batchState.queue) {
+    const key = item.id || item.relativePath;
+    if (key) queueMap.set(key, item);
+  }
+  for (let i = 0; i < masterQueue.length; i++) {
+    const key = masterQueue[i].id || masterQueue[i].relativePath;
+    if (key && queueMap.has(key)) {
+      masterQueue[i] = {
+        ...masterQueue[i],
+        ...queueMap.get(key),
+        mediaType: getMediaType(queueMap.get(key)),
+        extension: queueMap.get(key).extension || getItemExtension(queueMap.get(key)),
+      };
+    }
+  }
+}
+
+function filterQueueByMode(mode = batchState.ingestionMode || "all") {
+  if (!Array.isArray(masterQueue) || masterQueue.length === 0) {
+    if (batchState.queue.length > 0) {
+      masterQueue = batchState.queue.map((item) => ({
+        ...item,
+        mediaType: getMediaType(item),
+        extension: item.extension || getItemExtension(item),
+      }));
+    } else {
+      return [];
+    }
+  }
+  if (mode === "videos") {
+    return masterQueue.filter((item) => getMediaType(item) === "video");
+  }
+  if (mode === "documents") {
+    return masterQueue.filter((item) => getMediaType(item) === "document");
+  }
+  return [...masterQueue];
+}
+
+function updateBatchStats() {
+  syncMasterQueueFromState();
+
+  const stats = {
+    total: batchState.queue.length,
+    pending: 0,
+    running: 0,
+    completed: 0,
+    errors: 0,
+    cancelled: 0,
+    videosCount: 0,
+    docsCount: 0,
+    completedVideos: 0,
+    completedDocs: 0,
+    pendingVideos: 0,
+    pendingDocs: 0,
+  };
+
+  for (const item of batchState.queue) {
+    const mType = getMediaType(item);
+    item.mediaType = mType;
+    item.extension = item.extension || getItemExtension(item);
+
+    if (mType === "document") {
+      stats.docsCount++;
+    } else {
+      stats.videosCount++;
+    }
+
+    if (item.status === "pending") {
+      stats.pending++;
+      if (mType === "document") stats.pendingDocs++;
+      else stats.pendingVideos++;
+    } else if (item.status === "running") {
+      stats.running++;
+    } else if (item.status === "completed") {
+      stats.completed++;
+      if (mType === "document") stats.completedDocs++;
+      else stats.completedVideos++;
+    } else if (item.status === "error") {
+      stats.errors++;
+    } else if (item.status === "cancelled") {
+      stats.cancelled++;
+    }
+  }
+
+  if (masterQueue.length > 0) {
+    let mVids = 0, mDocs = 0, mCompVids = 0, mCompDocs = 0;
+    for (const m of masterQueue) {
+      const isD = getMediaType(m) === "document";
+      if (isD) {
+        mDocs++;
+        if (m.status === "completed") mCompDocs++;
+      } else {
+        mVids++;
+        if (m.status === "completed") mCompVids++;
+      }
+    }
+    stats.masterTotal = masterQueue.length;
+    stats.masterVideosCount = mVids;
+    stats.masterDocsCount = mDocs;
+    stats.masterCompletedVideos = mCompVids;
+    stats.masterCompletedDocs = mCompDocs;
+  }
+
   batchState.stats = stats;
   saveBatchManifest(false);
 }
@@ -502,7 +693,7 @@ function checkItemCompletedOnDisk(item, outputDir) {
       const base = path.basename(filePath);
       if (!base.endsWith(".md")) return null;
       const st = fs.statSync(filePath);
-      if (st.isFile() && st.size >= 150) {
+      if (st.isFile() && st.size >= 500) {
         return { markdownPath: filePath, sizeBytes: st.size, mtime: st.mtime.toISOString() };
       }
     } catch (_) {}
@@ -516,7 +707,7 @@ function checkItemCompletedOnDisk(item, outputDir) {
       for (const f of files) {
         if (!f.endsWith(".md")) continue;
         const normF = f.normalize("NFC").toLowerCase();
-        if (normF.startsWith(normBaseName) || normF.includes("_resumo_")) {
+        if (normF.startsWith(normBaseName) || normF.includes("_resumo_") || normF.includes("_rag_") || normF.startsWith("resumo_") || normF.startsWith("rag_")) {
           const full = path.join(dirPath, f);
           const valid = testFileValid(full);
           if (valid) return valid;
@@ -565,11 +756,15 @@ function saveBatchManifest(immediate = false) {
   const doSave = () => {
     manifestSaveTimeout = null;
     try {
+      syncMasterQueueFromState();
+      const itemsToSave = masterQueue.length > 0 ? masterQueue : batchState.queue;
+
       const manifest = {
         updatedAt: new Date().toISOString(),
         status: batchState.status,
         inputDir: batchState.inputDir,
         outputDir: batchState.outputDir,
+        ingestionMode: batchState.ingestionMode || "all",
         parallelism: batchState.parallelism,
         whisperModel: batchState.whisperModel,
         whisperLanguage: batchState.whisperLanguage || "es",
@@ -577,8 +772,10 @@ function saveBatchManifest(immediate = false) {
         startedAt: batchState.startedAt,
         finishedAt: batchState.finishedAt,
         stats: { ...batchState.stats },
-        queue: batchState.queue.map((q) => ({
+        queue: itemsToSave.map((q) => ({
           id: q.id,
+          mediaType: getMediaType(q),
+          extension: q.extension || getItemExtension(q),
           relativePath: q.relativePath,
           filename: q.filename,
           sizeBytes: q.sizeBytes,
@@ -668,13 +865,16 @@ function loadBatchManifest() {
 
   if (!loadedData) return false;
 
-  console.log(`[manifest] Carregando manifesto persistido de ${sourcePath} (${loadedData.queue.length} vídeos)...`);
+  console.log(`[manifest] Carregando manifesto persistido de ${sourcePath} (${loadedData.queue.length} itens)...`);
 
   if (loadedData.inputDir && fs.existsSync(loadedData.inputDir)) {
     batchState.inputDir = loadedData.inputDir;
   }
   if (loadedData.outputDir) {
     batchState.outputDir = loadedData.outputDir;
+  }
+  if (loadedData.ingestionMode) {
+    batchState.ingestionMode = loadedData.ingestionMode;
   }
   if (loadedData.parallelism) {
     batchState.parallelism = Math.max(1, Math.min(8, parseInt(loadedData.parallelism, 10)));
@@ -697,9 +897,14 @@ function loadBatchManifest() {
   batchState.startedAt = loadedData.startedAt || null;
   batchState.finishedAt = loadedData.finishedAt || null;
 
-  // Reconcilia cada item com o disco
-  batchState.queue = loadedData.queue.map((q) => {
+  // Reconcilia cada item com o disco e elimina duplicatas de mesmo nome e tamanho
+  masterQueue = deduplicateItems(loadedData.queue.map((q) => {
     const item = { ...q };
+    item.mediaType = getMediaType(item);
+    item.extension = item.extension || getItemExtension(item);
+    if (!item.fullPath && item.relativePath && batchState.inputDir) {
+      item.fullPath = path.join(batchState.inputDir, item.relativePath);
+    }
     const diskCheck = checkItemCompletedOnDisk(item, batchState.outputDir);
     if (diskCheck.completed || item.status === "completed") {
       item.status = "completed";
@@ -716,10 +921,11 @@ function loadBatchManifest() {
       item.error = null;
     }
     return item;
-  });
+  }));
 
+  batchState.queue = filterQueueByMode(batchState.ingestionMode);
   updateBatchStats();
-  console.log(`[manifest] Manifesto carregado: ${batchState.stats.completed} concluídos, ${batchState.stats.errors} erros, ${batchState.stats.pending} pendentes.`);
+  console.log(`[manifest] Manifesto carregado: ${batchState.stats.completed} concluídos (${batchState.stats.completedVideos} vídeos, ${batchState.stats.completedDocs} docs), ${batchState.stats.pending} pendentes (${batchState.stats.pendingVideos} vídeos, ${batchState.stats.pendingDocs} docs). Total: ${batchState.stats.total} (${batchState.stats.videosCount} vídeos, ${batchState.stats.docsCount} docs).`);
   saveBatchManifest(true);
   return true;
 }
@@ -941,6 +1147,7 @@ function getBatchSnapshot() {
     status: batchState.status,
     inputDir: batchState.inputDir,
     outputDir: batchState.outputDir,
+    ingestionMode: batchState.ingestionMode || "all",
     parallelism: batchState.parallelism,
     whisperModel: batchState.whisperModel,
     whisperLanguage: batchState.whisperLanguage || "es",
@@ -953,6 +1160,8 @@ function getBatchSnapshot() {
     activeWorkersCount: activeBatchWorkers.size,
     queue: batchState.queue.map((q) => ({
       id: q.id,
+      mediaType: getMediaType(q),
+      extension: q.extension || getItemExtension(q),
       relativePath: q.relativePath,
       filename: q.filename,
       sizeBytes: q.sizeBytes,
@@ -1088,8 +1297,17 @@ function pumpBatchQueue() {
   const freeSlots = Math.max(0, batchState.parallelism - activeBatchWorkers.size);
   if (freeSlots <= 0) return;
 
+  const currentMode = batchState.ingestionMode || "all";
   for (let i = 0; i < freeSlots; i++) {
-    const nextItem = batchState.queue.find((item) => item.status === "pending");
+    if (activeBatchWorkers.size >= batchState.parallelism) break;
+    const nextItem = batchState.queue.find((item) => {
+      if (item.status !== "pending") return false;
+      const mType = getMediaType(item);
+      if (currentMode === "videos" && mType !== "video") return false;
+      if (currentMode === "documents" && mType !== "document") return false;
+      return true;
+    });
+
     if (!nextItem) {
       if (activeBatchWorkers.size === 0) {
         batchState.status = "completed";
@@ -1108,6 +1326,10 @@ function startWorkerForItem(item) {
   item.status = "running";
   item.startedAt = new Date().toISOString();
   item.error = null;
+
+  if (!item.fullPath && item.relativePath && batchState.inputDir) {
+    item.fullPath = path.join(batchState.inputDir, item.relativePath);
+  }
 
   // Espelha a estrutura de pastas e cria pasta dedicada com o nome do vídeo
   const relativeDir = path.dirname(item.relativePath || "");
@@ -1128,9 +1350,17 @@ function startWorkerForItem(item) {
   updateBatchStats();
   broadcastBatchState();
 
-  const scriptPath = path.join(ROOT_DIR, "scripts/process_video.sh");
+  const ext = path.extname(item.filename || "").toLowerCase();
+  const isDoc = item.mediaType === "document" || DOCUMENT_EXTENSIONS.has(ext);
+  const scriptPath = isDoc
+    ? path.join(ROOT_DIR, "scripts/process_document.sh")
+    : path.join(ROOT_DIR, "scripts/process_video.sh");
+
   const whisperLang = batchState.whisperLanguage || "es";
-  const args = [item.fullPath, batchState.whisperModel, whisperLang];
+  const args = isDoc
+    ? [item.fullPath, batchState.axetModel || "gpt-5.6-terra"]
+    : [item.fullPath, batchState.whisperModel, whisperLang];
+
   const env = {
     ...process.env,
     OUTPUT_DIR: targetOutputDir,
@@ -1273,6 +1503,8 @@ function stopBatch() {
   // 4. Mata qualquer subprocesso órfão do pipeline restante no sistema operacional
   try {
     execSync('pkill -9 -f "process_video.sh" 2>/dev/null || true');
+    execSync('pkill -9 -f "process_document.sh" 2>/dev/null || true');
+    execSync('pkill -9 -f "extract_document.py" 2>/dev/null || true');
     execSync('pkill -9 -f "whisper-cli" 2>/dev/null || true');
     execSync('pkill -9 -f "axet-code run" 2>/dev/null || true');
     execSync('pkill -9 -f "ffmpeg -y -i" 2>/dev/null || true');
@@ -1412,6 +1644,18 @@ setInterval(() => {
     broadcastBatchState();
   }
 }, 3000);
+
+// Watchdog da fila do lote: a cada 5s, se o lote estiver em execução e houver slots livres
+// com itens pendentes, aciona pumpBatchQueue() para evitar starvation caso os workers
+// tenham chegado a zero durante salvaguarda de disco ou pausas temporárias.
+setInterval(() => {
+  if (batchState.status === "running" && activeBatchWorkers.size < batchState.parallelism) {
+    const hasPending = batchState.queue.some((item) => item.status === "pending");
+    if (hasPending) {
+      pumpBatchQueue();
+    }
+  }
+}, 5000);
 
 function broadcast(event) {
   let payload = null;
@@ -1714,6 +1958,9 @@ const server = http.createServer((req, res) => {
       if (data.outputDir) {
         batchState.outputDir = path.resolve(data.outputDir);
       }
+      if (data.ingestionMode && ["all", "videos", "documents"].includes(data.ingestionMode)) {
+        batchState.ingestionMode = data.ingestionMode;
+      }
       if (data.inputDir) {
         batchState.inputDir = path.resolve(data.inputDir);
       }
@@ -1728,6 +1975,11 @@ const server = http.createServer((req, res) => {
       }
       if (data.axetModel) {
         batchState.axetModel = String(data.axetModel).trim();
+      }
+
+      if (batchState.status !== "running") {
+        batchState.queue = filterQueueByMode(batchState.ingestionMode);
+        updateBatchStats();
       }
 
       broadcastBatchState();
@@ -1749,12 +2001,17 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: false, error: `Diretório não encontrado: ${targetDir}` }));
         return;
       }
-      const videos = scanVideosRecursively(targetDir);
+      if (data.ingestionMode && ["all", "videos", "documents"].includes(data.ingestionMode)) {
+        batchState.ingestionMode = data.ingestionMode;
+      }
+      const mode = data.ingestionMode || batchState.ingestionMode || "all";
+      const scannedFiles = scanFilesRecursively(targetDir, targetDir, mode);
       batchState.inputDir = targetDir;
 
       // Mapeia histórico existente por caminho relativo normalizado (NFC)
       const existingMap = new Map();
-      for (const item of batchState.queue) {
+      const allExisting = masterQueue.length > 0 ? masterQueue : batchState.queue;
+      for (const item of allExisting) {
         if (item.relativePath) {
           existingMap.set(item.relativePath.normalize("NFC"), item);
         }
@@ -1763,65 +2020,92 @@ const server = http.createServer((req, res) => {
       let completedCount = 0;
       let pendingCount = 0;
 
-      if (batchState.status === "idle" || batchState.status === "stopped" || batchState.status === "completed") {
-        batchState.queue = videos.map((v) => {
-          const normRel = (v.relativePath || "").normalize("NFC");
-          const existing = existingMap.get(normRel);
-          const diskCheck = checkItemCompletedOnDisk(v, batchState.outputDir);
-          const isCompleted = diskCheck.completed || (existing && existing.status === "completed");
+      const scannedItems = deduplicateItems(scannedFiles.map((v) => {
+        const normRel = (v.relativePath || "").normalize("NFC");
+        const existing = existingMap.get(normRel);
+        const diskCheck = checkItemCompletedOnDisk(v, batchState.outputDir);
+        const isCompleted = diskCheck.completed || (existing && existing.status === "completed");
+        const mediaType = getMediaType(v);
+        const extension = v.extension || getItemExtension(v);
 
-          if (isCompleted) {
-            completedCount++;
-            return {
-              id: v.id,
-              relativePath: v.relativePath,
-              fullPath: v.fullPath,
-              filename: v.filename,
-              sizeBytes: v.sizeBytes,
-              allocatedBytes: v.allocatedBytes || 0,
-              isHydrated: !!v.isHydrated,
-              isOnlineOnly: !!v.isOnlineOnly,
-              targetOutputDir: existing ? existing.targetOutputDir : null,
-              markdownPath: diskCheck.markdownPath || (existing ? existing.markdownPath : null),
-              status: "completed",
-              runId: existing ? existing.runId : null,
-              pid: null,
-              currentStep: "concluido",
-              currentStepProgress: 100,
-              currentStepMessage: diskCheck.markdownPath
-                ? `Relatório validado: ${path.basename(diskCheck.markdownPath)}`
-                : (existing && existing.currentStepMessage ? existing.currentStepMessage : "Relatório validado no disco"),
-              startedAt: existing ? existing.startedAt : null,
-              finishedAt: existing ? existing.finishedAt : null,
-              duration_s: existing ? existing.duration_s : null,
-              error: null,
-            };
-          } else {
-            pendingCount++;
-            return {
-              id: v.id,
-              relativePath: v.relativePath,
-              fullPath: v.fullPath,
-              filename: v.filename,
-              sizeBytes: v.sizeBytes,
-              allocatedBytes: v.allocatedBytes || 0,
-              isHydrated: !!v.isHydrated,
-              isOnlineOnly: !!v.isOnlineOnly,
-              targetOutputDir: existing ? existing.targetOutputDir : null,
-              markdownPath: null,
-              status: "pending",
-              runId: null,
-              pid: null,
-              currentStep: null,
-              currentStepProgress: null,
-              currentStepMessage: null,
-              startedAt: null,
-              finishedAt: null,
-              duration_s: null,
-              error: existing && existing.status === "error" ? existing.error : null,
-            };
+        if (isCompleted) {
+          completedCount++;
+          return {
+            id: v.id,
+            mediaType,
+            extension,
+            relativePath: v.relativePath,
+            fullPath: v.fullPath,
+            filename: v.filename,
+            sizeBytes: v.sizeBytes,
+            allocatedBytes: v.allocatedBytes || 0,
+            isHydrated: !!v.isHydrated,
+            isOnlineOnly: !!v.isOnlineOnly,
+            targetOutputDir: existing ? existing.targetOutputDir : null,
+            markdownPath: diskCheck.markdownPath || (existing ? existing.markdownPath : null),
+            status: "completed",
+            runId: existing ? existing.runId : null,
+            pid: null,
+            currentStep: "concluido",
+            currentStepProgress: 100,
+            currentStepMessage: diskCheck.markdownPath
+              ? `Relatório validado: ${path.basename(diskCheck.markdownPath)}`
+              : (existing && existing.currentStepMessage ? existing.currentStepMessage : "Relatório validado no disco"),
+            startedAt: existing ? existing.startedAt : null,
+            finishedAt: existing ? existing.finishedAt : null,
+            duration_s: existing ? existing.duration_s : null,
+            error: null,
+          };
+        } else {
+          pendingCount++;
+          return {
+            id: v.id,
+            mediaType,
+            extension,
+            relativePath: v.relativePath,
+            fullPath: v.fullPath,
+            filename: v.filename,
+            sizeBytes: v.sizeBytes,
+            allocatedBytes: v.allocatedBytes || 0,
+            isHydrated: !!v.isHydrated,
+            isOnlineOnly: !!v.isOnlineOnly,
+            targetOutputDir: existing ? existing.targetOutputDir : null,
+            markdownPath: null,
+            status: "pending",
+            runId: null,
+            pid: null,
+            currentStep: null,
+            currentStepProgress: null,
+            currentStepMessage: null,
+            startedAt: null,
+            finishedAt: null,
+            duration_s: null,
+            error: existing && existing.status === "error" ? existing.error : null,
+          };
+        }
+      }));
+
+      if (batchState.status === "idle" || batchState.status === "stopped" || batchState.status === "completed") {
+        if (mode === "all") {
+          masterQueue = scannedItems;
+        } else {
+          const scannedMap = new Map();
+          for (const s of scannedItems) {
+            scannedMap.set(s.id, s);
           }
-        });
+          masterQueue = masterQueue.map((m) => {
+            if (scannedMap.has(m.id)) {
+              const res = scannedMap.get(m.id);
+              scannedMap.delete(m.id);
+              return res;
+            }
+            return m;
+          });
+          for (const remaining of scannedMap.values()) {
+            masterQueue.push(remaining);
+          }
+        }
+        batchState.queue = filterQueueByMode(mode);
         updateBatchStats();
         updateStorageTelemetry();
         saveBatchManifest(true);
@@ -1832,10 +2116,12 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({
         ok: true,
         dir: targetDir,
-        count: videos.length,
-        completedCount,
-        pendingCount,
-        videos,
+        count: scannedItems.length,
+        videosCount: batchState.stats.videosCount,
+        docsCount: batchState.stats.docsCount,
+        completedCount: batchState.stats.completed,
+        pendingCount: batchState.stats.pending,
+        videos: batchState.queue,
         storage: storageTelemetry,
       }));
     });
@@ -1879,10 +2165,14 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      const videos = scanVideosRecursively(inputDir);
+      if (data.ingestionMode && ["all", "videos", "documents"].includes(data.ingestionMode)) {
+        batchState.ingestionMode = data.ingestionMode;
+      }
+      const mode = data.ingestionMode || batchState.ingestionMode || "all";
+      const videos = scanFilesRecursively(inputDir, inputDir, mode);
       if (videos.length === 0) {
         res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ ok: false, error: "Nenhum arquivo de vídeo encontrado na pasta e subpastas informadas." }));
+        res.end(JSON.stringify({ ok: false, error: "Nenhum arquivo compatível encontrado na pasta e subpastas informadas." }));
         return;
       }
 
@@ -1901,16 +2191,20 @@ const server = http.createServer((req, res) => {
         }
       }
 
-      batchState.queue = videos.map((v) => {
+      batchState.queue = deduplicateItems(videos.map((v) => {
         const normRel = (v.relativePath || "").normalize("NFC");
         const existing = existingMap.get(normRel);
         const diskCheck = checkItemCompletedOnDisk(v, outputDir);
         const isCompleted = (existing && existing.status === "completed") || diskCheck.completed;
+        const mediaType = getMediaType(v);
+        const extension = v.extension || getItemExtension(v);
 
         if (skipCompleted && isCompleted) {
           // Mantém 100% como concluído, preservando metadados e relatório gerado
           return {
             id: v.id,
+            mediaType,
+            extension,
             relativePath: v.relativePath,
             fullPath: v.fullPath,
             filename: v.filename,
@@ -1938,6 +2232,8 @@ const server = http.createServer((req, res) => {
         // Reprocessamento ou novo item: define como pending
         return {
           id: v.id,
+          mediaType,
+          extension,
           relativePath: v.relativePath,
           fullPath: v.fullPath,
           filename: v.filename,
@@ -1958,7 +2254,8 @@ const server = http.createServer((req, res) => {
           duration_s: null,
           error: null,
         };
-      });
+      }));
+      syncMasterQueueFromState();
 
       batchState.status = "running";
       batchState.startedAt = new Date().toISOString();
@@ -1981,6 +2278,36 @@ const server = http.createServer((req, res) => {
     stopBatch();
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ ok: true, message: "Lote interrompido com segurança", batch: getBatchSnapshot() }));
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/batch/retry-failed") {
+    let retriedCount = 0;
+    for (const item of batchState.queue) {
+      if (item.status === "error") {
+        item.status = "pending";
+        item.error = null;
+        item.currentStep = null;
+        item.currentStepProgress = null;
+        item.currentStepMessage = null;
+        item.startedAt = null;
+        item.finishedAt = null;
+        item.duration_s = null;
+        retriedCount++;
+      }
+    }
+    syncMasterQueueFromState();
+    updateBatchStats();
+    saveBatchManifest(true);
+    broadcastBatchState();
+
+    if (batchState.status === "running") {
+      pumpBatchQueue();
+    }
+
+    console.log(`[batch] ${retriedCount} itens com erro foram redefinidos para pendente e recolocados na fila.`);
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ ok: true, retriedCount, batch: getBatchSnapshot() }));
     return;
   }
 

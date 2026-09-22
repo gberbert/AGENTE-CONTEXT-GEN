@@ -28,11 +28,18 @@ const STEP_ORDER = [
   "geracao_markdown",
 ];
 
+const DOC_STEP_ORDER = [
+  "extracao_documento",
+  "interpretacao_axet",
+  "geracao_markdown",
+];
+
 const STEP_LABELS = {
   extracao_audio: "Extração de Áudio",
   transcricao_whisper: "Transcrição (Whisper)",
   interpretacao_axet: "Interpretação (axet-code)",
   geracao_markdown: "Geração do Markdown",
+  extracao_documento: "Extração do Documento",
 };
 
 const STEP_SHORT_NAMES = {
@@ -40,7 +47,15 @@ const STEP_SHORT_NAMES = {
   transcricao_whisper: "Whisper",
   interpretacao_axet: "Axet",
   geracao_markdown: "Relatório",
+  extracao_documento: "Extração",
 };
+
+function getRunStepOrder(run) {
+  if (run && (run.media_type === "document" || (run.steps && run.steps.extracao_documento))) {
+    return DOC_STEP_ORDER;
+  }
+  return STEP_ORDER;
+}
 
 const STEP_DESCRIPTIONS = {
   extracao_audio: "Extração do stream de áudio PCM 16kHz mono via ffmpeg",
@@ -256,7 +271,8 @@ function removeRunCard(runId) {
 function renderActiveRunsEmptyState() {
   const hasActiveCards = Object.keys(runCardEls).length > 0;
   activeRunsEmpty.style.display = hasActiveCards ? "none" : "block";
-  activeCountEl.textContent = String(Object.keys(runCardEls).length);
+  const activeCount = Object.values(allRuns).filter((r) => r && r.status === "running").length;
+  activeCountEl.textContent = String(activeCount);
 }
 
 function renderStepCardsForRun(runId) {
@@ -265,8 +281,9 @@ function renderStepCardsForRun(runId) {
   const run = allRuns[runId];
 
   els.stepsEl.innerHTML = "";
+  const steps = getRunStepOrder(run);
 
-  STEP_ORDER.forEach((stepKey, idx) => {
+  steps.forEach((stepKey, idx) => {
     const stepData = run && run.steps ? run.steps[stepKey] : null;
     const status = stepData ? stepData.status : "pending";
 
@@ -279,7 +296,7 @@ function renderStepCardsForRun(runId) {
 
     const name = document.createElement("div");
     name.className = "step-name";
-    name.textContent = `Passo ${idx + 1}/4 · ${STEP_LABELS[stepKey] || stepKey}`;
+    name.textContent = `Passo ${idx + 1}/${steps.length} · ${STEP_LABELS[stepKey] || stepKey}`;
     topRow.appendChild(name);
 
     const statusBadge = document.createElement("span");
@@ -315,10 +332,15 @@ function renderStepCardsForRun(runId) {
 
     // 3. Detalhes técnicos do passo
     const detail = document.createElement("div");
-    detail.className = "step-detail";
-    const detailText = stepData && stepData.detalhes
-      ? stepData.detalhes
-      : (STEP_DESCRIPTIONS[stepKey] || statusLabel(status));
+    const isErr = status === "error";
+    let detailText = stepData && stepData.detalhes ? stepData.detalhes : "";
+    if (!detailText && isErr) {
+      const lastErrLog = (run.logs || []).slice().reverse().find(l => l.level === "ERROR");
+      detailText = lastErrLog ? lastErrLog.message : "Erro na etapa.";
+    } else if (!detailText) {
+      detailText = (STEP_DESCRIPTIONS[stepKey] || statusLabel(status));
+    }
+    detail.className = `step-detail ${isErr ? "step-detail-error" : ""}`;
     detail.textContent = detailText;
     card.appendChild(detail);
 
@@ -385,9 +407,10 @@ function updateProgressBarForRun(runId) {
     els.progressBarEl.style.width = "0%";
     return;
   }
-  const total = STEP_ORDER.length;
+  const steps = getRunStepOrder(run);
+  const total = steps.length;
   let done = 0;
-  STEP_ORDER.forEach((k) => {
+  steps.forEach((k) => {
     const s = run.steps && run.steps[k];
     if (s && (s.status === "success" || s.status === "error")) done++;
   });
@@ -472,7 +495,15 @@ function syncActiveRunCards() {
         clearTimeout(lingerTimers[runId]);
         delete lingerTimers[runId];
       }
-    } else if (run.status === "success" || run.status === "error" || run.status === "cancelled") {
+    } else if (run.status === "cancelled") {
+      if (runCardEls[runId]) {
+        if (lingerTimers[runId]) {
+          clearTimeout(lingerTimers[runId]);
+          delete lingerTimers[runId];
+        }
+        removeRunCard(runId);
+      }
+    } else if (run.status === "success" || run.status === "error") {
       if (runCardEls[runId] && !lingerTimers[runId]) {
         lingerTimers[runId] = setTimeout(() => {
           removeRunCard(runId);
@@ -547,10 +578,11 @@ function renderHistory() {
       : (run.status === "running" ? "em execução..." : "—");
     tr.appendChild(tdFinished);
 
-    // Badges das 4 etapas
+    // Badges das etapas
     const tdSteps = document.createElement("td");
     tdSteps.className = "history-steps-cell";
-    STEP_ORDER.forEach((stepKey, idx) => {
+    const histSteps = getRunStepOrder(run);
+    histSteps.forEach((stepKey, idx) => {
       const stepData = run.steps ? run.steps[stepKey] : null;
       const stepStatus = stepData ? stepData.status : "pending";
       const badge = document.createElement("span");
@@ -590,7 +622,7 @@ function renderHistory() {
       const grid = document.createElement("div");
       grid.className = "history-steps-expanded-grid";
 
-      STEP_ORDER.forEach((stepKey, idx) => {
+      histSteps.forEach((stepKey, idx) => {
         const stepData = run.steps ? run.steps[stepKey] : null;
         const stepStatus = stepData ? stepData.status : "pending";
         const stepCard = document.createElement("div");
@@ -599,7 +631,14 @@ function renderHistory() {
         const sStart = stepData && stepData.started_at ? formatTime(stepData.started_at) : "—";
         const sEnd = stepData && stepData.finished_at ? formatTime(stepData.finished_at) : (stepStatus === "running" ? "em andamento..." : "—");
         const durText = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "—";
-        const detText = stepData && stepData.detalhes ? stepData.detalhes : (STEP_DESCRIPTIONS[stepKey] || "—");
+        const isErr = stepStatus === "error";
+        let detText = stepData && stepData.detalhes ? stepData.detalhes : "";
+        if (!detText && isErr) {
+          const lastErrLog = (run.logs || []).slice().reverse().find(l => l.level === "ERROR");
+          detText = lastErrLog ? lastErrLog.message : "Erro na execução da etapa.";
+        } else if (!detText) {
+          detText = STEP_DESCRIPTIONS[stepKey] || "—";
+        }
 
         stepCard.innerHTML = `
           <div class="h-step-top">
@@ -612,7 +651,7 @@ function renderHistory() {
             <div><span class="timing-lbl">Fim:</span> <strong>${sEnd}</strong></div>
             <div><span class="timing-lbl">Duração:</span> <strong>⏱ ${durText}</strong></div>
           </div>
-          <div class="h-step-detail"><span class="timing-lbl">Detalhes:</span> ${escapeHtml(detText)}</div>
+          <div class="h-step-detail ${isErr ? "h-step-detail-error" : ""}"><span class="timing-lbl">${isErr ? "Motivo do Erro:" : "Detalhes:"}</span> <strong>${escapeHtml(detText)}</strong></div>
         `;
         grid.appendChild(stepCard);
       });
@@ -844,6 +883,12 @@ function applyEventLocally(evt) {
           if (run.steps[stepKey].status === "running") {
             run.steps[stepKey].status = run.status === "cancelled" ? "cancelled" : "error";
             run.steps[stepKey].finished_at = timestamp;
+            if (run.status === "error" && !run.steps[stepKey].detalhes) {
+              const lastErrLog = (run.logs || []).slice().reverse().find(l => l.level === "ERROR");
+              if (lastErrLog) {
+                run.steps[stepKey].detalhes = lastErrLog.message;
+              }
+            }
           }
         });
       }
@@ -905,6 +950,7 @@ function formatBytes(bytes) {
 }
 
 const batchStartBtn = $("batch-start-btn");
+const batchRetryErrorsBtn = $("batch-retry-errors-btn");
 const batchResumeBtn = $("batch-resume-btn");
 const batchStopBtn = $("batch-stop-btn");
 const batchSkipCompleted = $("batch-skip-completed");
@@ -1044,7 +1090,10 @@ async function saveBatchConfigToServer(config) {
     if (data.ok && data.batch) {
       currentBatch = data.batch;
     }
-  } catch (_) {}
+    return data;
+  } catch (_) {
+    return null;
+  }
 }
 
 function renderBatchState(batch) {
@@ -1130,6 +1179,16 @@ function renderBatchState(batch) {
   const hasCompleted = (stats.completed || 0) > 0;
   const hasRemaining = (stats.pending || 0) > 0 || (stats.errors || 0) > 0 || (stats.cancelled || 0) > 0;
 
+  if (batchRetryErrorsBtn) {
+    if ((stats.errors || 0) > 0) {
+      batchRetryErrorsBtn.style.display = "inline-flex";
+      batchRetryErrorsBtn.disabled = isStopping;
+      batchRetryErrorsBtn.title = `Reenfileirar ${stats.errors} item(ns) com falha para reprocessamento`;
+    } else {
+      batchRetryErrorsBtn.style.display = "none";
+    }
+  }
+
   if (batchResumeBtn) {
     if (isRunning || isStopping) {
       batchResumeBtn.disabled = true;
@@ -1150,6 +1209,17 @@ function renderBatchState(batch) {
   if (statErrors) statErrors.textContent = stats.errors;
   if (statCancelled) statCancelled.textContent = stats.cancelled;
 
+  const statVideosEl = document.getElementById("stat-videos");
+  const statDocsEl = document.getElementById("stat-docs");
+  if (statVideosEl) statVideosEl.textContent = stats.videosCount != null ? stats.videosCount : 0;
+  if (statDocsEl) statDocsEl.textContent = stats.docsCount != null ? stats.docsCount : 0;
+
+  // Sincroniza botões do Modo de Ingestão
+  const currentMode = batch.ingestionMode || "all";
+  document.querySelectorAll("#ingestion-mode-group .btn-mode").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-mode") === currentMode);
+  });
+
   // Atualiza barra de progresso
   const total = stats.total || 0;
   const done = (stats.completed || 0) + (stats.errors || 0) + (stats.cancelled || 0);
@@ -1157,15 +1227,28 @@ function renderBatchState(batch) {
 
   if (batchProgressFill) batchProgressFill.style.width = `${pct}%`;
   if (batchProgressText) {
-    batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} vídeos processados (${pct}%)`;
+    if (currentMode === "videos") {
+      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} vídeos processados (${pct}%)`;
+    } else if (currentMode === "documents") {
+      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} documentos processados (${pct}%)`;
+    } else {
+      const vDone = stats.completedVideos != null ? stats.completedVideos : "--";
+      const dDone = stats.completedDocs != null ? stats.completedDocs : "--";
+      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} itens (${vDone} vídeos, ${dDone} docs concluídos) (${pct}%)`;
+    }
   }
   if (batchWorkersText) {
     batchWorkersText.textContent = `${batch.activeWorkersCount || 0} ativos / paralelismo: ${batch.parallelism || 2}`;
   }
 
-  if (queueSummaryCount) queueSummaryCount.textContent = `${total} vídeos`;
+  const noun = currentMode === "videos" ? "vídeos" : currentMode === "documents" ? "documentos" : "itens";
+  if (queueSummaryCount) queueSummaryCount.textContent = `${total} ${noun}`;
   if (scanCountBadge && total > 0) {
-    scanCountBadge.textContent = `${total} vídeos identificados na árvore`;
+    if (currentMode === "all") {
+      scanCountBadge.textContent = `${total} itens identificados (${stats.videosCount || 0} vídeos, ${stats.docsCount || 0} docs)`;
+    } else {
+      scanCountBadge.textContent = `${total} ${noun} identificados na árvore`;
+    }
     scanCountBadge.className = "scan-badge active";
   }
 
@@ -1416,6 +1499,51 @@ function getPipelineStepInfo(item) {
     }
   }
 
+  const itemExt = (item.extension || (item.filename ? item.filename.slice(item.filename.lastIndexOf(".")) : "")).toLowerCase();
+  const docExtensions = [
+    ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".odt", ".odp", ".ods",
+    ".html", ".htm", ".xhtml", ".xml",
+    ".txt", ".md", ".markdown", ".rtf",
+    ".xlsx", ".xls", ".csv", ".tsv",
+    ".json", ".jsonl"
+  ];
+  const isDoc = item.mediaType === "document" || docExtensions.includes(itemExt);
+
+  if (isDoc) {
+    if (stepKey === "extracao_documento") {
+      return {
+        label: "[1/3] Extração Multi-formato",
+        stepNum: 1,
+        pct: null,
+        badgeClass: "step-doc",
+        subtext: detailMsg || "Parser estruturado, tabelas e metadados",
+      };
+    } else if (stepKey === "interpretacao_axet") {
+      return {
+        label: "[2/3] Análise RAG (axet-code)",
+        stepNum: 2,
+        pct: null,
+        badgeClass: "step-axet",
+        subtext: detailMsg || "Estruturação profunda para RAG",
+      };
+    } else if (stepKey === "geracao_markdown") {
+      return {
+        label: "[3/3] Geração do Markdown",
+        stepNum: 3,
+        pct: null,
+        badgeClass: "step-markdown",
+        subtext: detailMsg || "Gravando relatório .md enriquecido",
+      };
+    }
+    return {
+      label: "Iniciando ingestão...",
+      stepNum: 1,
+      pct: 0,
+      badgeClass: "step-doc",
+      subtext: "Preparando documento",
+    };
+  }
+
   if (stepKey === "extracao_audio") {
     return {
       label: "[1/4] Extração de Áudio",
@@ -1519,11 +1647,34 @@ function renderQueueTable(queue) {
         cloudBadge = `<span class="storage-tag-local" title="Arquivo baixado no Mac (Hidratado)">💾 Local</span>`;
       }
 
+      const rowExt = (item.extension || (item.filename ? item.filename.slice(item.filename.lastIndexOf(".")) : "")).toLowerCase();
+      let typeBadge = "";
+      if (rowExt === ".pdf") {
+        typeBadge = `<span class="badge-media-type badge-media-pdf">📄 PDF</span>`;
+      } else if (rowExt === ".docx" || rowExt === ".doc" || rowExt === ".odt") {
+        typeBadge = `<span class="badge-media-type badge-media-docx">📝 DOCX</span>`;
+      } else if (rowExt === ".pptx" || rowExt === ".ppt" || rowExt === ".odp") {
+        typeBadge = `<span class="badge-media-type badge-media-pptx">📊 PPTX</span>`;
+      } else if (rowExt === ".html" || rowExt === ".htm" || rowExt === ".xhtml") {
+        typeBadge = `<span class="badge-media-type badge-media-html">🌐 HTML</span>`;
+      } else if (rowExt === ".xlsx" || rowExt === ".xls" || rowExt === ".csv" || rowExt === ".tsv" || rowExt === ".ods") {
+        typeBadge = `<span class="badge-media-type badge-media-xlsx">📈 TABELA</span>`;
+      } else if (rowExt === ".json" || rowExt === ".jsonl" || rowExt === ".xml") {
+        typeBadge = `<span class="badge-media-type badge-media-code">⚙️ DADOS</span>`;
+      } else if (rowExt === ".txt" || rowExt === ".md" || rowExt === ".markdown" || rowExt === ".rtf") {
+        typeBadge = `<span class="badge-media-type badge-media-txt">📋 TEXTO</span>`;
+      } else {
+        typeBadge = `<span class="badge-media-type badge-media-video">🎬 VÍDEO</span>`;
+      }
+
       return `
         <tr class="queue-row queue-row-${statusClass}" id="queue-row-${escapeHtml(item.id)}">
           <td>${idx + 1}</td>
           <td>
-            <strong>${escapeHtml(item.relativePath || item.filename)}</strong>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+              ${typeBadge}
+              <strong>${escapeHtml(item.relativePath || item.filename)}</strong>
+            </div>
             ${relFolder ? `<div class="queue-item-dest" style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">📁 saída: <code>${escapeHtml(relFolder)}/</code></div>` : ""}
             ${item.error ? `<div class="queue-item-error" style="color: var(--error); font-size: 10px; margin-top: 2px;">${escapeHtml(item.error)}</div>` : ""}
           </td>
@@ -1596,10 +1747,13 @@ async function scanVideos() {
   }
 
   try {
+    const activeModeBtn = document.querySelector("#ingestion-mode-group .btn-mode.active");
+    const ingestionMode = activeModeBtn ? activeModeBtn.getAttribute("data-mode") : (currentBatch && currentBatch.ingestionMode) || "all";
+
     const res = await fetch("/api/batch/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inputDir: dir }),
+      body: JSON.stringify({ inputDir: dir, ingestionMode }),
     });
     const data = await res.json();
     if (!data.ok) {
@@ -1613,11 +1767,17 @@ async function scanVideos() {
 
     const completedCount = data.completedCount || 0;
     const pendingCount = data.pendingCount || (data.count - completedCount);
+    const activeMode = (data.batch && data.batch.ingestionMode) || (currentBatch && currentBatch.ingestionMode) || "all";
+    const noun = activeMode === "videos" ? "vídeos" : activeMode === "documents" ? "documentos" : "itens";
     if (scanCountBadge) {
-      scanCountBadge.textContent = `${data.count} vídeos na árvore (${completedCount} já concluídos, ${pendingCount} a processar)`;
+      if (activeMode === "all") {
+        scanCountBadge.textContent = `${data.count} itens na árvore (${data.videosCount || 0} vídeos, ${data.docsCount || 0} docs | ${completedCount} prontos)`;
+      } else {
+        scanCountBadge.textContent = `${data.count} ${noun} na árvore (${completedCount} já concluídos, ${pendingCount} a processar)`;
+      }
       scanCountBadge.className = "scan-badge active";
     }
-    if (queueSummaryCount) queueSummaryCount.textContent = `${data.count} vídeos (${completedCount} concluídos)`;
+    if (queueSummaryCount) queueSummaryCount.textContent = `${data.count} ${noun} (${completedCount} concluídos)`;
 
     renderQueueTable(data.videos || []);
 
@@ -1773,7 +1933,16 @@ async function startBatchExecution(isResume = false) {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inputDir, outputDir, parallelism, whisperModel, whisperLanguage, axetModel, skipCompleted }),
+      body: JSON.stringify({
+        inputDir,
+        outputDir,
+        ingestionMode: (document.querySelector("#ingestion-mode-group .btn-mode.active") ? document.querySelector("#ingestion-mode-group .btn-mode.active").getAttribute("data-mode") : "all"),
+        parallelism,
+        whisperModel,
+        whisperLanguage,
+        axetModel,
+        skipCompleted,
+      }),
     });
     const data = await res.json();
     if (!data.ok) {
@@ -1865,6 +2034,20 @@ if (btnBrowseInput) btnBrowseInput.addEventListener("click", () => handleBrowseF
 if (btnBrowseOutput) btnBrowseOutput.addEventListener("click", () => handleBrowseFolder("output"));
 if (btnScanVideos) btnScanVideos.addEventListener("click", scanVideos);
 
+// Listener para o Seletor de Modo de Ingestão (Ambos / Vídeos / Documentos)
+document.querySelectorAll("#ingestion-mode-group .btn-mode").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    document.querySelectorAll("#ingestion-mode-group .btn-mode").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const mode = btn.getAttribute("data-mode");
+    const data = await saveBatchConfigToServer({ ingestionMode: mode });
+    if (data && data.batch) {
+      updateBatchUI(data.batch);
+      renderQueueTable(data.batch.queue || []);
+    }
+  });
+});
+
 if (batchOutputDir) {
   batchOutputDir.addEventListener("change", () => {
     const val = batchOutputDir.value.trim();
@@ -1917,6 +2100,22 @@ if (batchParallelism) {
 }
 
 if (batchStartBtn) batchStartBtn.addEventListener("click", () => startBatchExecution(false));
+if (batchRetryErrorsBtn) {
+  batchRetryErrorsBtn.addEventListener("click", async () => {
+    try {
+      batchRetryErrorsBtn.disabled = true;
+      const res = await fetch("/api/batch/retry-failed", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        console.log(`[batch] ${data.retriedCount} falhas reenfileiradas com sucesso.`);
+      }
+    } catch (err) {
+      console.error("[batch] Erro ao reenfileirar falhas:", err);
+    } finally {
+      batchRetryErrorsBtn.disabled = false;
+    }
+  });
+}
 if (batchResumeBtn) batchResumeBtn.addEventListener("click", () => startBatchExecution(true));
 if (batchStopBtn) batchStopBtn.addEventListener("click", stopBatchExecution);
 

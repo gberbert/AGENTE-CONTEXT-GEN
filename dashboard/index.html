@@ -12,7 +12,7 @@
     <header class="cockpit-header">
       <div class="brand">
         <span class="brand-dot" id="conn-dot"></span>
-        <h1>AXET Video Pipeline <span class="accent">// Cockpit</span></h1>
+        <h1>AXET Multimodal Pipeline <span class="accent">// Cockpit</span></h1>
       </div>
 
       <!-- Velocímetros de Telemetria do Sistema (CPU e RAM em Tempo Real) -->
@@ -64,10 +64,13 @@
       <div class="panel-header batch-header">
         <div class="batch-title">
           <span class="batch-icon">⚙️</span>
-          <span>Processamento em Lote & Varredura Recursiva</span>
+          <span>Processamento Multimodal em Lote (Vídeos & Docs)</span>
           <span class="batch-badge" id="batch-status-badge">Pronto</span>
         </div>
         <div class="batch-actions">
+          <button id="batch-retry-errors-btn" class="btn btn-warning" style="display: none;" title="Reenfileirar todos os itens com falha">
+            <span class="btn-icon">🔄</span> Reenfileirar Falhas
+          </button>
           <button id="batch-resume-btn" class="btn btn-resume" style="display: none;" title="Retomar lote de onde parou (processar apenas falhas e pendentes, pulando já concluídos)">
             <span class="btn-icon">⏯</span> Retomar de Onde Parou
           </button>
@@ -116,7 +119,24 @@
         </div>
 
         <!-- Configurações de Execução: Paralelismo e Modelo -->
-        <div class="config-row-params">
+                <div class="config-row-params">
+          <div class="config-group config-param config-mode-selector">
+            <label>
+              <strong>Modo de Ingestão</strong>
+              <span class="label-desc">Mídias incluídas na jornada</span>
+            </label>
+            <div class="mode-toggle-group" id="ingestion-mode-group">
+              <button type="button" class="btn-mode active" data-mode="all" title="Processar vídeos e documentos (.pdf, .docx, .html, .pptx, .xlsx, etc.) em lote único">
+                <span class="mode-icon">🚀</span> Ambos
+              </button>
+              <button type="button" class="btn-mode" data-mode="videos" title="Processar somente vídeos (.mp4, .mkv, .mov, etc.)">
+                <span class="mode-icon">🎬</span> Vídeos
+              </button>
+              <button type="button" class="btn-mode" data-mode="documents" title="Processar somente documentos (.pdf, .docx, .html, .pptx, .xlsx, .csv, .txt, etc.)">
+                <span class="mode-icon">📄</span> Docs
+              </button>
+            </div>
+          </div>
           <div class="config-group config-param">
             <label for="batch-parallelism">
               <strong>Paralelismo (Concorrência)</strong>
@@ -205,6 +225,8 @@
 
         <div class="batch-stats-counters">
           <div class="stat-pill stat-total"><span class="stat-num" id="stat-total">0</span> Total</div>
+          <div class="stat-pill stat-media-videos"><span class="stat-num" id="stat-videos">0</span> 🎬 Vídeos</div>
+          <div class="stat-pill stat-media-docs"><span class="stat-num" id="stat-docs">0</span> 📄 Docs</div>
           <div class="stat-pill stat-running"><span class="stat-num" id="stat-running">0</span> Em Execução</div>
           <div class="stat-pill stat-completed"><span class="stat-num" id="stat-completed">0</span> Concluídos</div>
           <div class="stat-pill stat-pending"><span class="stat-num" id="stat-pending">0</span> Pendentes</div>

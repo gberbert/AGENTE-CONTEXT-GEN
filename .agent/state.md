@@ -1,45 +1,51 @@
 # CURRENT PROJECT STATE
 
-Last updated: 2026-09-20 08:56 (America/Sao_Paulo)
+Last updated: 2026-09-22 10:10 (America/Sao_Paulo)
 
-Agent/session: Axet Plugin — integração do prompt avançado (`prompts/analise_transcricao_avancada.md`) ao pipeline oficial e remoção da transcrição bruta do arquivo `.md`.
+Agent/session: Axet Multimodal Pipeline — Ingestão Multi-formato de Documentos de Mercado (.html, .xlsx, .csv, .txt, .json, etc.) e Watchdog de Fila no Cockpit.
 
 ---
 
 ## Current Version
 
-Ver `versionamento.md` para o histórico de versões do projeto.
+v0.10.0 (Ver `versionamento.md` para o histórico detalhado).
 
 ---
 
 ## Current Objective
 
-Cockpit totalmente operacional em http://localhost:4545/ com pipeline executando o prompt avançado sênior via `gpt-5.6-terra`, velocímetro de telemetria de hardware em tempo real calibrado para o kernel do macOS e motor de transcrição acelerado nativamente via `whisper.cpp` (Metal no Apple Silicon M4 Pro).
+Cockpit totalmente operacional em http://localhost:4545/ com suporte multimodal estendido (Vídeos + Documentos PDF, DOCX, PPTX, HTML, Planilhas XLSX/CSV, Texto e Dados Estruturados), pipeline executando prompt RAG de alta densidade via `gpt-5.6-terra`, velocímetro de telemetria em tempo real e watchdog auto-pump ativo.
 
 ---
 
 ## Active Task
 
-Status: COMPLETED (2026-09-20 22:49)
+Status: COMPLETED (2026-09-22)
 
-Task ID: TASK-20260920-2240-BATCH-PERSISTENCE-AND-RESUME
+Task ID: TASK-20260922-EXTENSOES-DOCUMENTOS-MERCADO
 
-Description: Implementação de persistência atômica do lote (batch_manifest.json), detecção dual de vídeos concluídos no disco e suporte a retomada inteligente (resume de onde parou sem reprocessar os 287 vídeos já concluídos).
+Description: Expansão do pipeline de documentos corporativos para reconhecimento, extração e conversão RAG de formatos de mercado: HTML (.html, .htm, .xhtml), Planilhas (.xlsx, .xls), Dados Tabulares (.csv, .tsv), Texto (.txt, .md, .markdown, .rtf) e Dados Estruturados (.json, .jsonl, .xml). Inclusão de watchdog auto-pump de 5s no servidor para proteção contra starvation de fila.
 
-Result: Concluído e validado. Implementada persistência de manifesto (`batch_manifest.json`) no workspace (.agent/) e na pasta de saída (OneDrive), detector dual com normalização NFC para acentos no macOS, suporte a `skipCompleted` nos endpoints `/api/batch/scan`, `/api/batch/start` e `/api/batch/resume`, botão "Retomar de Onde Parou" no Cockpit e validação no navegador confirmando 287 concluídos e 336 pendentes.
+Result: Concluído e 100% validado em testes automatizados. Servidor atualizado rodando na porta 4545.
 
 ---
 
 ## Current Implementation State
 
-- `dashboard/server.js` — persistência contínua em `batch_manifest.json`, detecção dual de relatórios Markdown em disco (`checkItemCompletedOnDisk`), auto-recuperação na inicialização (`loadBatchManifest`), endpoints `/api/batch/scan`, `/api/batch/start`, `/api/batch/resume` com salvaguarda `skipCompleted`.
-- `dashboard/index.html` e `dashboard/style.css` — botão visual `⏯ Retomar de Onde Parou` (`.btn-resume`), checkbox `🛡️ Pular vídeos já concluídos` e tags `✓ Concluído`.
-- `dashboard/app.js` — integração completa de retomada sem reprocessamento, exibição de contagens `287 concluídos • 336 a processar` e links diretos para relatórios gerados.
-- `scripts/process_video.sh` — prevenção de aninhamento duplo de pastas de saída e compatibilidade retroativa com caminhos históricos.
+- `scripts/extract_document.py` — parsers dedicados de alta fidelidade para HTML (`BeautifulSoup` + `markdownify`), Excel (`openpyxl`), CSV (`csv`), Texto e JSON, com fallback universal via `markitdown`.
+- `dashboard/server.js` — `DOCUMENT_EXTENSIONS` estendido com 17 novas extensões de mercado; watchdog auto-pump periódico de 5s para evitar starvation da fila; auto-recuperação via manifesto.
+- `dashboard/app.js` — detecção de extensões e badges específicos (`🌐 HTML`, `📈 TABELA`, `⚙️ DADOS`, `📋 TEXTO`).
+- `dashboard/style.css` — estilos cromáticos temáticos para cada novo tipo de mídia.
+- `dashboard/index.html` — descrições de interface e tooltips atualizados.
 
 ---
 
 ## Latest Relevant Changes
+
+- Implementado suporte a `.html`, `.htm` e `.xhtml` com sanitização de scripts/estilos/navegação e conversão direta para Markdown estruturado.
+- Implementado suporte a `.xlsx`, `.xls`, `.csv` e `.tsv` com conversão automática de abas em tabelas Markdown.
+- Implementado suporte a `.txt`, `.md`, `.markdown`, `.json`, `.jsonl`, `.xml` e formatos OpenDocument (.odt, .ods, .odp).
+- Adicionado watchdog auto-pump de 5s no servidor Node para evitar pausas acidentais na fila.
 
 - Implementado sistema de persistência atômica de lote (`batch_manifest.json`) salvo em `.agent/` e na pasta de saída do lote, com recarga automática ao reiniciar o servidor Node.
 - Implementado detector dual de vídeos concluídos (`checkItemCompletedOnDisk`) com normalização Unicode NFC e validação de tamanho (> 150 bytes), garantindo reconhecimento dos 287 vídeos já processados.
@@ -62,6 +68,7 @@ Result: Concluído e validado. Implementada persistência de manifesto (`batch_m
 - Validada execução real com transcrição em menos de 2 segundos.
 - Adicionado seletor de modelos da IA (`axet-code models`).
 - Adicionadas abas "Execuções Ativas" e "Histórico de Execuções".
+- Ajustada a etapa final de `scripts/process_document.sh`: o artefato Markdown agora contém somente o relatório RAG estruturado retornado pela IA; a referência fiel do conteúdo bruto é mantida na seção 9 do template.
 
 ---
 
@@ -78,7 +85,7 @@ Result: Concluído e validado. Implementada persistência de manifesto (`batch_m
 - [x] Correção dos falsos positivos de timeout do watchdog durante Whisper (CONCLUÍDO).
 - [x] Geração dos 6 arquivos `output/*_resumo_*.md` do lote REEF Intro (TODOS CONCLUÍDOS).
 - [x] Geração do relatório detalhado para `tesorería-contabilidad-2` (CONCLUÍDO).
-- [ ] Nenhuma pendência técnica imediata.
+- [x] Conformidade do Markdown final de documentos com o template RAG, sem duplicação de corpus (CONCLUÍDO).
 
 ---
 
