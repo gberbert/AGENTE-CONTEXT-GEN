@@ -1,8 +1,50 @@
 # VERSIONAMENTO — AXET VIDEO PIPELINE
 
-Este projeto não possui `package.json` nem repositório git no momento da criação deste arquivo. Este documento serve como registro manual de versões e mudanças relevantes, até que um sistema de versionamento formal (git) seja adotado.
+Este documento serve como registro manual de versões e mudanças relevantes, acompanhando a evolução do repositório Git.
 
 Formato: `[VERSÃO] - AAAA-MM-DD` seguido de lista de mudanças.
+
+## [0.12.0] - 2026-09-23
+
+### Adicionado / Aprimorado
+
+- **Processamento Multimodal de Vídeos com OCR de Tela e Visão por IA (`scripts/extract_video_frames.py`, `scripts/analyze_video_multimodal.py`, `prompts/analise_video_multimodal.md`)**:
+  - Implementado extrator inteligente de frames via `ffmpeg` com amostragem temporal adaptativa, redimensionamento (1280x720) e compressão otimizada JPEG (~50KB/frame), gerando manifesto com timestamps exatos de exibição.
+  - Criado orquestrador multimodal Python que associa cada frame ao áudio transcrito (Whisper) e envia o payload visual + textual diretamente ao LLM Gateway corporativo (`http://localhost:8766` / Claude Sonnet / GPT-4o / GPT-5) via API Messages/Completions com fallback automático para `axet-code`.
+  - Criado prompt especializado de análise multimodal com regras estritas anti-alucinação, extração de texto de interfaces (OCR de menus, botões, tabelas, campos de formulário e mensagens de status), interpretação de diagramas de arquitetura e correlação cronológica entre fala e telas.
+  - Salvaguarda inviolável de armazenamento: frames são extraídos e processados estritamente na pasta temporária `/tmp/axet-workspace/${RUN_ID}/frames/` e sumariamente limpos após a síntese, mantendo o OneDrive 100% intocado.
+
+- **Chave de Seleção em Configurações no Cockpit Web (`dashboard/index.html`, `dashboard/app.js`, `dashboard/server.js`)**:
+  - Adicionado seletor visual corporativo no Card de Configurações para alternância dinâmica entre:
+    1. `👁️ Com OCR + Visão Multimodal + LLM (Frames de Tela + Áudio)`: modo enriquecido com análise simultânea de fala e visão;
+    2. `🎙️ Sem OCR (Apenas Áudio + LLM Tradicional)`: modo clássico focado exclusivamente na transcrição do áudio.
+  - Persistência automática da seleção no `localStorage`, no servidor Node (`POST /api/batch/config`), nos metadados do manifesto (`batch_manifest.json`) e no disparo de execuções do lote.
+
+---
+
+## [0.11.0] - 2026-09-22
+
+### Adicionado / Aprimorado
+
+- **Redesenho do Layout em Tela Única (Single-Screen 100vh Viewport)**:
+  - Eliminado o scroll vertical confuso e excessivo (> 3.500px), consolidando todo o Cockpit em um viewport fixo de 100vh com cabeçalho compacto, barra de controle e telemetria reduzida, e navegação limpa por abas unificadas:
+    1. `📂 Fila do Lote`: visualização paginada e filtrada de todos os itens do lote;
+    2. `⚡ Execuções Ativas`: grade em tempo real de workers com etapas e logs streaming;
+    3. `📜 Histórico Concluído`: tabela paginada de execuções finalizadas com expansão detalhada de etapas;
+    4. `📊 Telemetria & Storage`: métricas avançadas de hidratação OneDrive, salvaguarda do SSD Mac e `/tmp`.
+
+- **Paginação e Filtros para Filas Massivas e Histórico (`dashboard/index.html`, `dashboard/app.js`, `dashboard/style.css`)**:
+  - Implementada paginação client-side com seletor de itens por página (25, 50, 100 ou Todos) e botões Primeira, Anterior, Próxima e Última.
+  - Implementado campo de busca em tempo real (`#queue-search-input` e `#history-search-input`) com botão de limpeza rápida (`×`).
+  - Implementados chips de filtragem por status (`Todos`, `Pendentes`, `Executando`, `Concluídos`, `Erros`) com contadores numéricos atualizados dinamicamente via SSE.
+  - Otimização crítica de performance: renderização fatiada reduz nós DOM em mais de 98% para lotes de 2.600+ arquivos, eliminando travamentos de browser e mantendo a página atual durante atualizações em segundo plano.
+
+- **Identidade Visual Corporativa NTT DATA (`dashboard/server.js`, `logos/`)**:
+  - Servidor Node configurado com rota estática para servir os ativos da pasta `logos/` (`/logos/ntt-data-logo.png`, `/logos/ntt-symbol.png`, `/favicon-64.png`).
+  - Paleta de cores oficial NTT DATA aplicada em todo o CSS: Deep Navy (`#070b14`), Surface Navy (`#0c1427`), NTT Blue (`#0072bc`), Cyan Glow (`#38bdf8`) e Emerald Accent (`#10b981`).
+  - Favicon corporativo de 64px e cabeçalho institucional integrado.
+
+---
 
 ## [0.10.0] - 2026-09-22
 

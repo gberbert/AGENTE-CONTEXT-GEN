@@ -1,47 +1,52 @@
 # CURRENT PROJECT STATE
 
-Last updated: 2026-09-22 10:10 (America/Sao_Paulo)
+Last updated: 2026-09-22 12:15 (America/Sao_Paulo)
 
-Agent/session: Axet Multimodal Pipeline — Ingestão Multi-formato de Documentos de Mercado (.html, .xlsx, .csv, .txt, .json, etc.) e Watchdog de Fila no Cockpit.
+Agent/session: Axet Multimodal Pipeline — Redesenho de Layout em Tela Única (Single-Screen 100vh), Paginação e Filtros para Filas e Histórico, e Identidade Visual NTT DATA.
 
 ---
 
 ## Current Version
 
-v0.10.0 (Ver `versionamento.md` para o histórico detalhado).
+v0.12.0 (Ver `versionamento.md` para o histórico detalhado).
 
 ---
 
 ## Current Objective
 
-Cockpit totalmente operacional em http://localhost:4545/ com suporte multimodal estendido (Vídeos + Documentos PDF, DOCX, PPTX, HTML, Planilhas XLSX/CSV, Texto e Dados Estruturados), pipeline executando prompt RAG de alta densidade via `gpt-5.6-terra`, velocímetro de telemetria em tempo real e watchdog auto-pump ativo.
+Processamento multimodal enriquecido de vídeos com OCR de telas, formulários e diagramas via LLM Gateway (:8766), mantendo compatibilidade com áudio clássico e controle dinâmico no Cockpit Web (http://localhost:4545/).
 
 ---
 
 ## Active Task
 
-Status: COMPLETED (2026-09-22)
+Status: COMPLETED (2026-09-23)
 
-Task ID: TASK-20260922-EXTENSOES-DOCUMENTOS-MERCADO
+Task ID: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
 
-Description: Expansão do pipeline de documentos corporativos para reconhecimento, extração e conversão RAG de formatos de mercado: HTML (.html, .htm, .xhtml), Planilhas (.xlsx, .xls), Dados Tabulares (.csv, .tsv), Texto (.txt, .md, .markdown, .rtf) e Dados Estruturados (.json, .jsonl, .xml). Inclusão de watchdog auto-pump de 5s no servidor para proteção contra starvation de fila.
+Description: Integração dinâmica da sessão corporativa Okta OIDC (OneNTT) e API Gateway local. Implementado extrator assíncrono em `dashboard/server.js` que consome `tokens.json` e `user_identity.json` de `dev/local-ai-gateway/gateway/` e o endpoint `/auth/status` de `:8766`, alimentando em tempo real os dados de Gustavo Costa Berbert (email: gustavo.costa.berbert@nttdata.com, login: gcostabe@emeal.nttdata.com, Okta ID, tenant onentt, TTL restante e status dos gateways) no cabeçalho e no modal Okta SSO.
 
-Result: Concluído e 100% validado em testes automatizados. Servidor atualizado rodando na porta 4545.
+Validation: Validado endpoint `/api/auth/status` via curl e renderização no navegador com captura de screenshot.
 
 ---
 
 ## Current Implementation State
 
-- `scripts/extract_document.py` — parsers dedicados de alta fidelidade para HTML (`BeautifulSoup` + `markdownify`), Excel (`openpyxl`), CSV (`csv`), Texto e JSON, com fallback universal via `markitdown`.
-- `dashboard/server.js` — `DOCUMENT_EXTENSIONS` estendido com 17 novas extensões de mercado; watchdog auto-pump periódico de 5s para evitar starvation da fila; auto-recuperação via manifesto.
-- `dashboard/app.js` — detecção de extensões e badges específicos (`🌐 HTML`, `📈 TABELA`, `⚙️ DADOS`, `📋 TEXTO`).
-- `dashboard/style.css` — estilos cromáticos temáticos para cada novo tipo de mídia.
-- `dashboard/index.html` — descrições de interface e tooltips atualizados.
+- `dashboard/server.js` — Resolvedor dinâmico `resolveOktaIdentity()` com decodificação de JWT e verificação de saúde do gateway (:8766 / :3001); endpoints `/api/auth/status`, `/api/auth/refresh`, `/api/fs/open`; sincronização de itens do manifesto em `/state`; auto-refresh de token gateway.
+- `dashboard/index.html` — Layout com badge Okta SSO dinâmico, modal enriquecido com metadados OIDC (Login corporativo, Okta User ID, TTL de sessão, IdP OneNTT), barra multissegmentada no KPI 2, simetria em diretórios e Card 3 de Telemetria de Tokens.
+- `dashboard/style.css` — Estilos corporativos do modal Okta SSO, cards ativos, grid simétrico e paleta NTT DATA.
+- `dashboard/app.js` — Função `syncAuthStatus()` para binding dinâmico de todos os claims corporativos, status em tempo real a cada 60s, sincronização de filas e histórico.
+
+
 
 ---
 
 ## Latest Relevant Changes
 
+- Atualizado `relatorio_tecnico_multimodal_reef_tron.md` com relatório técnico-funcional de 27 seções, baseado exclusivamente na transcrição Whisper e em oito frames OCR fornecidos (03:56–30:55). A entrega contém 20 blocos de Q&A, arquitetura lógica restrita às evidências, mapa cronológico revisado e divergência DUP/RTE explicitada e resolvida pela resposta completa do Frame 03.
+- Implementado redesenho completo de tela única (Single-Screen 100vh Viewport) eliminando scroll confuso de 3.500px.
+- Implementada paginação e busca instantânea com chips de status na Fila do Lote e no Histórico Concluído.
+- Integrados os logos oficiais da NTT DATA na pasta `logos/` (`ntt-data-logo.png`, `ntt-symbol.png`, `favicon-64.png`).
 - Implementado suporte a `.html`, `.htm` e `.xhtml` com sanitização de scripts/estilos/navegação e conversão direta para Markdown estruturado.
 - Implementado suporte a `.xlsx`, `.xls`, `.csv` e `.tsv` com conversão automática de abas em tabelas Markdown.
 - Implementado suporte a `.txt`, `.md`, `.markdown`, `.json`, `.jsonl`, `.xml` e formatos OpenDocument (.odt, .ods, .odp).

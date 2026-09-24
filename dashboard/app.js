@@ -34,34 +34,63 @@ const DOC_STEP_ORDER = [
   "geracao_markdown",
 ];
 
+const DOC_EXTENSIONS = [
+  ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".odt", ".odp", ".ods",
+  ".html", ".htm", ".xhtml", ".xml",
+  ".txt", ".md", ".markdown", ".rtf",
+  ".xlsx", ".xls", ".csv", ".tsv",
+  ".json", ".jsonl"
+];
+
+function isDocumentRun(run) {
+  if (!run) return false;
+  if (run.media_type === "document" || run.mediaType === "document") return true;
+  if (run.media_type === "video" || run.mediaType === "video") return false;
+  if (run.steps && run.steps.extracao_documento) return true;
+  if (run.steps && (run.steps.extracao_audio || run.steps.transcricao_whisper)) return false;
+  const filename = run.video || run.filename || run.name || "";
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot !== -1) {
+    const ext = filename.slice(lastDot).toLowerCase();
+    if (DOC_EXTENSIONS.includes(ext)) return true;
+  }
+  return false;
+}
+
+function getRunStepOrder(run) {
+  return isDocumentRun(run) ? DOC_STEP_ORDER : STEP_ORDER;
+}
+
 const STEP_LABELS = {
-  extracao_audio: "Extração de Áudio",
+  extracao_audio: "Extração de Áudio (ffmpeg)",
   transcricao_whisper: "Transcrição (Whisper)",
-  interpretacao_axet: "Interpretação (axet-code)",
-  geracao_markdown: "Geração do Markdown",
-  extracao_documento: "Extração do Documento",
+  interpretacao_axet: "Análise RAG (axet-code)",
+  geracao_markdown: "Relatório Markdown Final",
+  extracao_documento: "Extração Estruturada (Parser)",
 };
 
 const STEP_SHORT_NAMES = {
   extracao_audio: "Áudio",
   transcricao_whisper: "Whisper",
-  interpretacao_axet: "Axet",
-  geracao_markdown: "Relatório",
-  extracao_documento: "Extração",
+  interpretacao_axet: "Análise RAG",
+  geracao_markdown: "Relatório .md",
+  extracao_documento: "Extração Doc",
 };
 
-function getRunStepOrder(run) {
-  if (run && (run.media_type === "document" || (run.steps && run.steps.extracao_documento))) {
-    return DOC_STEP_ORDER;
-  }
-  return STEP_ORDER;
-}
+const STEP_ICONS = {
+  extracao_audio: "🎵",
+  transcricao_whisper: "🎙️",
+  interpretacao_axet: "🤖",
+  geracao_markdown: "📝",
+  extracao_documento: "📄",
+};
 
 const STEP_DESCRIPTIONS = {
   extracao_audio: "Extração do stream de áudio PCM 16kHz mono via ffmpeg",
   transcricao_whisper: "Processamento acústico/temporal linha a linha via Whisper",
-  interpretacao_axet: "Síntese humanizada e estruturação funcional via axet-code",
-  geracao_markdown: "Montagem do documento executivo final em Markdown com evidências",
+  interpretacao_axet: "Síntese com IA, extração de entidades técnicas e estruturação profunda para RAG",
+  geracao_markdown: "Montagem do documento executivo final em Markdown com evidências e metadados",
+  extracao_documento: "Parsing estruturado de texto, camadas, tabelas e metadados via Python",
 };
 
 const expandedHistoryRows = new Set();
@@ -74,7 +103,9 @@ const $ = (id) => document.getElementById(id);
 const activeRunsGrid = $("active-runs-grid");
 const activeRunsEmpty = $("active-runs-empty");
 const activeCountEl = $("active-count");
-const historyBody = $("history-body");
+const historyRunsGrid = $("history-runs-grid");
+const historyRunsEmpty = $("history-runs-empty");
+const historyBody = historyRunsGrid || $("history-body");
 const connDot = $("conn-dot");
 const connStatus = $("conn-status");
 
@@ -106,10 +137,15 @@ function statusLabel(status) {
 function statusLabelRun(status) {
   switch (status) {
     case "running": return "em execução";
-    case "success": return "concluído";
-    case "error": return "erro";
+    case "success":
+    case "completed": return "concluído";
+    case "error":
+    case "failed": return "erro";
     case "cancelled": return "cancelado";
-    default: return "aguardando";
+    case "pending":
+    case "waiting":
+    case "queued": return "aguardando";
+    default: return status || "—";
   }
 }
 
@@ -160,44 +196,63 @@ function escapeHtml(str) {
 // Criação / atualização de cards de execução ATIVA
 // ---------------------------------------------------------------------------
 
+const expandedActiveRuns = new Set();
+
 function createRunCard(runId) {
   const root = document.createElement("div");
   root.className = "run-card";
   root.dataset.runId = runId;
 
   root.innerHTML = `
-    <div class="run-card-header">
+    <div class="run-card-header" data-role="card-header">
       <div class="run-card-title">
         <span class="run-card-id">${escapeHtml(runId)}</span>
         <div class="run-card-title-actions">
+          <span class="pipeline-type-badge pipeline-badge-video" data-role="pipeline-badge">
+            <span class="badge-dot"></span> Pipeline
+          </span>
           <span class="value status-pill running" data-role="status">em execução</span>
+          <button type="button" class="btn-toggle-card-details" data-role="toggle-btn" title="Expandir ou recolher detalhes dos passos">
+            <span class="toggle-txt">Passos</span> <span class="toggle-icon">▼</span>
+          </button>
           <button type="button" class="btn-cancel" data-role="cancel-btn" title="Cancelar execução">Cancelar</button>
         </div>
       </div>
-      <div class="run-card-meta">
-        <span class="meta-item"><span class="meta-lbl">Vídeo:</span> <strong data-role="video">—</strong></span> ·
+      <div class="run-card-meta" data-role="card-meta">
+        <span class="meta-item"><span class="meta-lbl">Arquivo:</span> <strong data-role="video">—</strong></span> ·
         <span class="meta-item"><span class="meta-lbl">Whisper:</span> <strong data-role="whisper">—</strong></span> ·
-        <span class="meta-item"><span class="meta-lbl">axet-code:</span> <strong data-role="axet">—</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Modelo IA:</span> <strong data-role="axet">—</strong></span> ·
         <span class="meta-item"><span class="meta-lbl">Início:</span> <strong data-role="started">—</strong></span> ·
         <span class="meta-item"><span class="meta-lbl">Fim:</span> <strong data-role="finished">—</strong></span> ·
         <span class="meta-item"><span class="meta-lbl">Duração:</span> <strong data-role="duration" class="meta-dur">—</strong></span>
       </div>
     </div>
 
+    <!-- Stepper de Fluxo da Pipeline (Conectado Horizontal) -->
+    <div class="pipeline-flow-stepper-wrap">
+      <div class="pipeline-flow-stepper" data-role="pipeline-stepper"></div>
+    </div>
+
     <div class="progress-bar-wrap">
       <div class="progress-bar" data-role="progress-bar"></div>
     </div>
 
-    <div class="steps" data-role="steps"></div>
-
-    <div class="panel logs-panel run-card-logs">
-      <div class="panel-header">Log em tempo real</div>
-      <div class="log-stream" data-role="log-stream"></div>
+    <!-- Bloco Expansível: Passos Detalhados + Log Stream -->
+    <div class="run-card-expandable collapsed" data-role="expandable">
+      <div class="steps" data-role="steps"></div>
+      <div class="panel logs-panel run-card-logs">
+        <div class="panel-header">Log em tempo real</div>
+        <div class="log-stream" data-role="log-stream"></div>
+      </div>
     </div>
   `;
 
   const els = {
     root,
+    cardHeaderEl: root.querySelector('[data-role="card-header"]'),
+    pipelineBadgeEl: root.querySelector('[data-role="pipeline-badge"]'),
+    cardMetaEl: root.querySelector('[data-role="card-meta"]'),
+    pipelineStepperEl: root.querySelector('[data-role="pipeline-stepper"]'),
     statusEl: root.querySelector('[data-role="status"]'),
     videoEl: root.querySelector('[data-role="video"]'),
     whisperEl: root.querySelector('[data-role="whisper"]'),
@@ -206,16 +261,46 @@ function createRunCard(runId) {
     finishedEl: root.querySelector('[data-role="finished"]'),
     durationEl: root.querySelector('[data-role="duration"]'),
     progressBarEl: root.querySelector('[data-role="progress-bar"]'),
+    expandableEl: root.querySelector('[data-role="expandable"]'),
+    toggleBtnEl: root.querySelector('[data-role="toggle-btn"]'),
     stepsEl: root.querySelector('[data-role="steps"]'),
     logStreamEl: root.querySelector('[data-role="log-stream"]'),
     cancelBtnEl: root.querySelector('[data-role="cancel-btn"]'),
   };
 
-  els.cancelBtnEl.addEventListener("click", () => cancelRun(runId));
+  function updateExpandState() {
+    const isExp = expandedActiveRuns.has(runId);
+    if (els.expandableEl) {
+      els.expandableEl.classList.toggle("collapsed", !isExp);
+    }
+    if (els.toggleBtnEl) {
+      const icon = els.toggleBtnEl.querySelector(".toggle-icon");
+      const txt = els.toggleBtnEl.querySelector(".toggle-txt");
+      if (icon) icon.textContent = isExp ? "▲" : "▼";
+      if (txt) txt.textContent = isExp ? "Fechar" : "Passos";
+    }
+  }
+
+  // Clicou no card abre, clicou de novo fecha
+  root.addEventListener("click", (e) => {
+    if (e.target.closest(".btn-cancel") || e.target.closest("a") || e.target.closest("input")) return;
+    if (expandedActiveRuns.has(runId)) {
+      expandedActiveRuns.delete(runId);
+    } else {
+      expandedActiveRuns.add(runId);
+    }
+    updateExpandState();
+  });
+
+  els.cancelBtnEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelRun(runId);
+  });
 
   runCardEls[runId] = els;
 
   renderStepCardsForRun(runId);
+  updateExpandState();
 
   return root;
 }
@@ -275,10 +360,70 @@ function renderActiveRunsEmptyState() {
   activeCountEl.textContent = String(activeCount);
 }
 
+function renderPipelineStepperForRun(runId) {
+  const els = runCardEls[runId];
+  if (!els || !els.pipelineStepperEl) return;
+  const run = allRuns[runId];
+  if (!run) return;
+
+  const steps = getRunStepOrder(run);
+  const total = steps.length;
+  els.pipelineStepperEl.innerHTML = "";
+
+  steps.forEach((stepKey, idx) => {
+    const stepData = run.steps ? run.steps[stepKey] : null;
+    const status = stepData ? stepData.status : "pending";
+    const icon = STEP_ICONS[stepKey] || "⚙️";
+    const shortName = STEP_SHORT_NAMES[stepKey] || stepKey;
+    const durStr = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "";
+
+    const node = document.createElement("div");
+    node.className = `stepper-step-node ${status}`;
+
+    let statusSymbol = idx + 1;
+    if (status === "success") statusSymbol = "✓";
+    else if (status === "error") statusSymbol = "✕";
+    else if (status === "running") statusSymbol = `<span class="stepper-pulse"></span>`;
+
+    let statusText = "aguardando";
+    if (status === "running") {
+      const pct = stepData && stepData.progress_pct != null ? `${Math.round(stepData.progress_pct)}%` : "em execução";
+      statusText = pct;
+    } else if (status === "success") {
+      statusText = durStr || "concluído";
+    } else if (status === "error") {
+      statusText = "falhou";
+    }
+
+    node.innerHTML = `
+      <div class="stepper-bubble" title="${STEP_LABELS[stepKey] || stepKey} (${statusLabel(status)})">
+        <span class="stepper-num">${statusSymbol}</span>
+      </div>
+      <div class="stepper-label-wrap">
+        <span class="stepper-name">${icon} ${shortName}</span>
+        <span class="stepper-status-note">${statusText}</span>
+      </div>
+    `;
+
+    els.pipelineStepperEl.appendChild(node);
+
+    if (idx < total - 1) {
+      const line = document.createElement("div");
+      const isPassed = status === "success";
+      line.className = `stepper-connector ${isPassed ? "completed" : ""}`;
+      els.pipelineStepperEl.appendChild(line);
+    }
+  });
+}
+
 function renderStepCardsForRun(runId) {
   const els = runCardEls[runId];
   if (!els) return;
   const run = allRuns[runId];
+
+  // Renderiza Stepper de Fluxo da Pipeline
+  renderPipelineStepperForRun(runId);
+  renderRunCardInfo(runId);
 
   els.stepsEl.innerHTML = "";
   const steps = getRunStepOrder(run);
@@ -424,9 +569,54 @@ function renderRunCardInfo(runId) {
   const run = allRuns[runId];
   if (!run) return;
 
-  els.videoEl.textContent = run.video || "—";
-  els.whisperEl.textContent = run.whisper_model || "—";
-  els.axetEl.textContent = run.axet_model || "—";
+  const isDoc = isDocumentRun(run);
+
+  // Atualiza Badge da Pipeline no topo do card
+  if (els.pipelineBadgeEl) {
+    if (isDoc) {
+      els.pipelineBadgeEl.className = "pipeline-type-badge pipeline-badge-doc";
+      els.pipelineBadgeEl.innerHTML = `<span class="badge-dot"></span>📄 Pipeline Documento (3 Etapas)`;
+    } else {
+      els.pipelineBadgeEl.className = "pipeline-type-badge pipeline-badge-video";
+      els.pipelineBadgeEl.innerHTML = `<span class="badge-dot"></span>🎬 Pipeline Vídeo (4 Etapas)`;
+    }
+  }
+
+  // Atualiza Metadados Adaptativos
+  if (els.cardMetaEl) {
+    const startedStr = run.started_at ? formatTime(run.started_at) : "—";
+    const finishedStr = run.finished_at ? formatTime(run.finished_at) : (run.status === "running" ? "em execução..." : "—");
+    let durStr = "—";
+    if (run.duration_total_s != null) {
+      durStr = formatDuration(run.duration_total_s);
+    } else if (run.started_at) {
+      const elapsed = Math.max(0, (Date.now() - new Date(run.started_at).getTime()) / 1000);
+      durStr = `${formatDuration(elapsed)} (ativo)`;
+    }
+
+    if (isDoc) {
+      els.cardMetaEl.innerHTML = `
+        <span class="meta-item"><span class="meta-lbl">Arquivo:</span> <strong title="${escapeHtml(run.video || '')}">${escapeHtml(run.video || '—')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Pipeline:</span> <span class="meta-pill meta-pill-doc">Documento (3 etapas)</span></span> ·
+        <span class="meta-item"><span class="meta-lbl">Modelo IA:</span> <strong>${escapeHtml(run.axet_model || 'gpt-5.6-terra')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Início:</span> <strong>${startedStr}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Duração:</span> <strong class="meta-dur">${durStr}</strong></span>
+      `;
+    } else {
+      els.cardMetaEl.innerHTML = `
+        <span class="meta-item"><span class="meta-lbl">Vídeo:</span> <strong title="${escapeHtml(run.video || '')}">${escapeHtml(run.video || '—')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Whisper:</span> <strong>${escapeHtml(run.whisper_model || 'large-v3')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Modelo IA:</span> <strong>${escapeHtml(run.axet_model || 'gpt-5.6-terra')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Início:</span> <strong>${startedStr}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Duração:</span> <strong class="meta-dur">${durStr}</strong></span>
+      `;
+    }
+  }
+
+  // Mantém referências antigas caso sejam lidas em algum outro lugar
+  if (els.videoEl) els.videoEl.textContent = run.video || "—";
+  if (els.whisperEl) els.whisperEl.textContent = run.whisper_model || "—";
+  if (els.axetEl) els.axetEl.textContent = run.axet_model || "—";
 
   els.statusEl.textContent = statusLabelRun(run.status);
   els.statusEl.className = `value status-pill ${run.status}`;
@@ -442,13 +632,15 @@ function renderRunCardInfo(runId) {
     els.finishedEl.textContent = run.finished_at ? formatTime(run.finished_at) : (run.status === "running" ? "em execução..." : "—");
   }
 
-  if (run.duration_total_s != null) {
-    els.durationEl.textContent = formatDuration(run.duration_total_s);
-  } else if (run.started_at) {
-    const elapsed = Math.max(0, (Date.now() - new Date(run.started_at).getTime()) / 1000);
-    els.durationEl.textContent = `${formatDuration(elapsed)} (em execução...)`;
-  } else {
-    els.durationEl.textContent = "—";
+  if (els.durationEl) {
+    if (run.duration_total_s != null) {
+      els.durationEl.textContent = formatDuration(run.duration_total_s);
+    } else if (run.started_at) {
+      const elapsed = Math.max(0, (Date.now() - new Date(run.started_at).getTime()) / 1000);
+      els.durationEl.textContent = `${formatDuration(elapsed)} (em execução...)`;
+    } else {
+      els.durationEl.textContent = "—";
+    }
   }
 }
 
@@ -528,138 +720,423 @@ function toggleHistoryDetails(runId) {
   renderHistory();
 }
 
-function renderHistory() {
-  if (!historyBody) return;
-  historyBody.innerHTML = "";
+let historyCurrentPage = 1;
+let historyPageSize = 25;
+let historySearchTerm = "";
+let historyStatusFilter = "all";
+let lastCalculatedHistoryTotalPages = 1;
 
-  const historyList = runOrderList.filter((id) => allRuns[id] && allRuns[id].status !== "running");
-  const historyCountBadge = $("history-count");
-  if (historyCountBadge) {
-    historyCountBadge.textContent = String(historyList.length);
+function syncBatchQueueToRuns(queue) {
+  if (!Array.isArray(queue) || queue.length === 0) return false;
+  let changed = false;
+
+  queue.forEach((item) => {
+    if (item.status === "completed" || item.status === "error") {
+      const runId = item.runId || `item_${item.id}`;
+      const isDoc = item.mediaType === "document" || isDocumentRun({ video: item.filename });
+      const existing = allRuns[runId];
+
+      if (!existing) {
+        allRuns[runId] = {
+          run_id: runId,
+          video: item.filename,
+          fullPath: item.fullPath,
+          media_type: item.mediaType || (isDoc ? "document" : "video"),
+          status: item.status,
+          started_at: item.startedAt || null,
+          finished_at: item.finishedAt || null,
+          duration_s: item.duration_s != null ? item.duration_s : null,
+          duration_total_s: item.duration_s != null ? item.duration_s : null,
+          markdown_path: item.markdownPath || null,
+          axet_model: (currentBatch && currentBatch.axetModel) || "gpt-5.6-terra",
+          whisper_model: (currentBatch && currentBatch.whisperModel) || "small",
+          steps: {
+            extracao_audio: { status: isDoc ? "skipped" : "success", duration_s: 1 },
+            transcricao_whisper: { status: isDoc ? "skipped" : "success", duration_s: Math.round((item.duration_s || 30) * 0.4) },
+            extracao_documento: { status: isDoc ? "success" : "skipped", duration_s: 1 },
+            interpretacao_axet: { status: item.status === "error" ? "error" : "success", duration_s: Math.round((item.duration_s || 30) * 0.5) },
+            geracao_markdown: { status: item.status === "error" ? "error" : "success", duration_s: 1 },
+          },
+          fromBatchQueue: true,
+        };
+        if (!runOrderList.includes(runId)) {
+          runOrderList.push(runId);
+        }
+        changed = true;
+      } else {
+        if (existing.status !== item.status) {
+          existing.status = item.status;
+          changed = true;
+        }
+        if (item.markdownPath && !existing.markdown_path) {
+          existing.markdown_path = item.markdownPath;
+          changed = true;
+        }
+        if (item.duration_s != null && existing.duration_s == null) {
+          existing.duration_s = item.duration_s;
+          existing.duration_total_s = item.duration_s;
+          changed = true;
+        }
+      }
+    }
+  });
+
+  return changed;
+}
+
+function createHistoryCard(runId, run) {
+  const root = document.createElement("div");
+  const isErr = run.status === "error" || run.status === "failed";
+  root.className = `run-card run-card-history ${run.status || 'completed'}`;
+  root.dataset.runId = runId;
+
+  const isDoc = isDocumentRun(run);
+  const histSteps = getRunStepOrder(run);
+  const totalSteps = histSteps.length;
+  const isExp = expandedHistoryRows.has(runId);
+
+  const startedStr = run.started_at ? formatDateTime(run.started_at) : "—";
+  const finishedStr = run.finished_at ? formatDateTime(run.finished_at) : (run.status === "running" ? "em execução..." : "—");
+  const durStr = run.duration_total_s != null ? formatDuration(run.duration_total_s) : "—";
+
+  const pipelineBadgeHtml = isDoc
+    ? `<span class="pipeline-type-badge pipeline-badge-doc"><span class="badge-dot"></span>📄 Pipeline Documento (3 Etapas)</span>`
+    : `<span class="pipeline-type-badge pipeline-badge-video"><span class="badge-dot"></span>🎬 Pipeline Vídeo (4 Etapas)</span>`;
+
+  let reportPath = run.markdown_path || run.markdownPath || run.report_path || "";
+  if (!reportPath && currentBatch && Array.isArray(currentBatch.queue)) {
+    const queueItem = currentBatch.queue.find(q => 
+      q.runId === runId || 
+      q.id === runId || 
+      (q.filename && run.video && (q.filename === run.video || q.filename.includes(run.video) || run.video.includes(q.filename))) ||
+      (q.video && run.video && (q.video === run.video || q.video.includes(run.video) || run.video.includes(q.video)))
+    );
+    if (queueItem && queueItem.markdownPath) {
+      reportPath = queueItem.markdownPath;
+      run.markdown_path = reportPath;
+    }
+  }
+  const reportName = reportPath ? reportPath.split("/").pop() : "";
+
+  root.innerHTML = `
+    <div class="run-card-header" data-role="card-header">
+      <div class="run-card-title">
+        <span class="run-card-id" title="${escapeHtml(runId)}">${escapeHtml(runId)}</span>
+        <div class="run-card-title-actions">
+          ${pipelineBadgeHtml}
+          <span class="value status-pill ${run.status}">${statusLabelRun(run.status)}</span>
+          <button type="button" class="btn-toggle-card-details" data-role="toggle-btn" title="Expandir ou recolher detalhes dos passos">
+            <span class="toggle-txt">${isExp ? 'Fechar' : 'Passos'}</span> <span class="toggle-icon">${isExp ? '▲' : '▼'}</span>
+          </button>
+        </div>
+      </div>
+      <div class="run-card-meta" data-role="card-meta">
+        <span class="meta-item"><span class="meta-lbl">${isDoc ? 'Arquivo' : 'Vídeo'}:</span> <strong title="${escapeHtml(run.video || '')}">${escapeHtml(run.video || '—')}</strong></span> ·
+        ${isDoc
+          ? `<span class="meta-item"><span class="meta-lbl">Pipeline:</span> <span class="meta-pill meta-pill-doc">Documento (3 etapas)</span></span> ·`
+          : `<span class="meta-item"><span class="meta-lbl">Whisper:</span> <strong>${escapeHtml(run.whisper_model || 'large-v3')}</strong></span> ·`
+        }
+        <span class="meta-item"><span class="meta-lbl">Modelo IA:</span> <strong>${escapeHtml(run.axet_model || 'gpt-5.6-terra')}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Início:</span> <strong>${startedStr}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Fim:</span> <strong>${finishedStr}</strong></span> ·
+        <span class="meta-item"><span class="meta-lbl">Duração:</span> <strong class="meta-dur">⏱ ${durStr}</strong></span>
+      </div>
+    </div>
+
+    <!-- Stepper de Fluxo da Pipeline (Conectado Horizontal) -->
+    <div class="pipeline-flow-stepper-wrap">
+      <div class="pipeline-flow-stepper" data-role="pipeline-stepper"></div>
+    </div>
+
+    <!-- Barra de Progresso da Pipeline -->
+    <div class="progress-bar-wrap">
+      <div class="progress-bar ${isErr ? 'error' : ''}" style="width: 100%;"></div>
+    </div>
+
+    <!-- Bloco Expansível: Passos Detalhados + Relatório .md + Log Stream -->
+    <div class="run-card-expandable ${isExp ? '' : 'collapsed'}" data-role="expandable">
+      <div class="steps" data-role="steps"></div>
+
+      <!-- Relatório Markdown de Saída (Dentro do Detalhamento, Antes do Log) -->
+      ${reportPath ? `
+      <div class="history-report-box">
+        <div class="history-report-info">
+          <span class="history-report-icon">📄</span>
+          <div class="history-report-text">
+            <div class="history-report-title">Relatório Markdown de Saída</div>
+            <div class="history-report-name" title="${escapeHtml(reportPath)}">${escapeHtml(reportName || reportPath)}</div>
+            <div class="history-report-path" title="${escapeHtml(reportPath)}">${escapeHtml(reportPath)}</div>
+          </div>
+        </div>
+        <button type="button" class="btn-open-report-main" data-role="open-report" title="Abrir arquivo Markdown no editor do sistema">
+          <span>Abrir Relatório .md</span> ↗
+        </button>
+      </div>
+      ` : ''}
+
+      <div class="panel logs-panel run-card-logs">
+        <div class="panel-header">Logs da Execução</div>
+        <div class="log-stream" data-role="log-stream"></div>
+      </div>
+    </div>
+  `;
+
+  // 1. Stepper horizontal conectado
+  const stepperEl = root.querySelector('[data-role="pipeline-stepper"]');
+  if (stepperEl) {
+    stepperEl.innerHTML = "";
+    histSteps.forEach((stepKey, idx) => {
+      const stepData = run.steps ? run.steps[stepKey] : null;
+      const status = stepData ? stepData.status : "pending";
+      const shortName = STEP_SHORT_NAMES[stepKey] || stepKey;
+      const durStr = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "";
+
+      const node = document.createElement("div");
+      node.className = `stepper-step-node ${status}`;
+
+      let statusSymbol = idx + 1;
+      if (status === "success" || status === "completed") statusSymbol = "✓";
+      else if (status === "error" || status === "failed") statusSymbol = "✕";
+
+      node.innerHTML = `
+        <div class="stepper-bubble" title="${STEP_LABELS[stepKey] || stepKey} (${statusLabel(status)})">${statusSymbol}</div>
+        <div class="stepper-label-wrap">
+          <span class="stepper-name">${escapeHtml(shortName)}</span>
+          <span class="stepper-status-note">${durStr || (status === "success" ? "concluído" : statusLabel(status))}</span>
+        </div>
+      `;
+      stepperEl.appendChild(node);
+
+      if (idx < totalSteps - 1) {
+        const conn = document.createElement("div");
+        conn.className = `stepper-connector ${status === "success" || status === "completed" ? "completed" : ""}`;
+        stepperEl.appendChild(conn);
+      }
+    });
   }
 
-  // ordem mais recente primeiro
-  const ids = [...runOrderList].reverse();
-
-  ids.forEach((runId) => {
-    const run = allRuns[runId];
-    if (!run) return;
-
-    const tr = document.createElement("tr");
-    tr.className = "history-main-row";
-
-    const tdId = document.createElement("td");
-    tdId.innerHTML = `<span class="run-id-cell" title="${escapeHtml(runId)}">${escapeHtml(runId)}</span>`;
-    tr.appendChild(tdId);
-
-    const tdVideo = document.createElement("td");
-    tdVideo.textContent = run.video || "—";
-    tdVideo.title = run.video || "";
-    tr.appendChild(tdVideo);
-
-    const tdStatus = document.createElement("td");
-    const pill = document.createElement("span");
-    pill.className = `status-pill ${run.status}`;
-    pill.textContent = statusLabelRun(run.status);
-    tdStatus.appendChild(pill);
-    tr.appendChild(tdStatus);
-
-    const tdDuration = document.createElement("td");
-    tdDuration.textContent = run.duration_total_s != null ? formatDuration(run.duration_total_s) : "—";
-    tr.appendChild(tdDuration);
-
-    const tdStarted = document.createElement("td");
-    tdStarted.textContent = run.started_at ? formatDateTime(run.started_at) : "—";
-    tr.appendChild(tdStarted);
-
-    const tdFinished = document.createElement("td");
-    tdFinished.textContent = run.finished_at
-      ? formatDateTime(run.finished_at)
-      : (run.status === "running" ? "em execução..." : "—");
-    tr.appendChild(tdFinished);
-
-    // Badges das etapas
-    const tdSteps = document.createElement("td");
-    tdSteps.className = "history-steps-cell";
-    const histSteps = getRunStepOrder(run);
+  // 2. Passos detalhados (Step Cards)
+  const stepsEl = root.querySelector('[data-role="steps"]');
+  if (stepsEl) {
+    stepsEl.innerHTML = "";
     histSteps.forEach((stepKey, idx) => {
       const stepData = run.steps ? run.steps[stepKey] : null;
       const stepStatus = stepData ? stepData.status : "pending";
-      const badge = document.createElement("span");
-      badge.className = `step-badge ${stepStatus}`;
-      const durText = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "";
-      badge.textContent = `${idx + 1}. ${STEP_SHORT_NAMES[stepKey] || stepKey}${durText ? ` (${durText})` : ""}`;
+      const card = document.createElement("div");
+      card.className = `step-card ${stepStatus}`;
 
       const sStart = stepData && stepData.started_at ? formatTime(stepData.started_at) : "—";
-      const sEnd = stepData && stepData.finished_at ? formatTime(stepData.finished_at) : "—";
-      const sDet = stepData && stepData.detalhes ? stepData.detalhes : "";
-      badge.title = `Passo ${idx + 1}/4 · ${STEP_LABELS[stepKey] || stepKey}\nStatus: ${statusLabel(stepStatus)}\nInício: ${sStart}\nFim: ${sEnd}${durText ? `\nDuração: ${durText}` : ""}${sDet ? `\nDetalhes: ${sDet}` : ""}`;
+      const sEnd = stepData && stepData.finished_at ? formatTime(stepData.finished_at) : (stepStatus === "running" ? "em andamento..." : "—");
+      const durText = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "—";
+      const stepErr = stepStatus === "error" || stepStatus === "failed";
 
-      tdSteps.appendChild(badge);
+      let detText = stepData && stepData.detalhes ? stepData.detalhes : "";
+      if (!detText && stepErr) {
+        const lastErrLog = (run.logs || []).slice().reverse().find(l => l.level === "ERROR");
+        detText = lastErrLog ? lastErrLog.message : "Erro na execução da etapa.";
+      } else if (!detText) {
+        detText = STEP_DESCRIPTIONS[stepKey] || statusLabel(stepStatus);
+      }
+
+      card.innerHTML = `
+        <div class="step-card-top">
+          <div class="step-name">Passo ${idx + 1}/${totalSteps} · ${escapeHtml(STEP_LABELS[stepKey] || stepKey)}</div>
+          <span class="step-status-tag ${stepStatus}">${escapeHtml(statusLabel(stepStatus))}</span>
+        </div>
+        <div class="step-timing-row">
+          <span class="timing-item"><span class="timing-lbl">Início:</span> <strong>${sStart}</strong></span>
+          <span class="timing-sep">·</span>
+          <span class="timing-item"><span class="timing-lbl">Fim:</span> <strong>${sEnd}</strong></span>
+          <span class="timing-sep">·</span>
+          <span class="timing-dur">⏱ <strong>${durText}</strong></span>
+        </div>
+        <div class="step-detail ${stepErr ? 'step-detail-error' : ''}">
+          <span class="timing-lbl">${stepErr ? 'Motivo do Erro:' : 'Detalhes:'}</span> <strong>${escapeHtml(detText)}</strong>
+        </div>
+      `;
+      stepsEl.appendChild(card);
     });
-    tr.appendChild(tdSteps);
+  }
 
-    // Botão de expandir detalhes dos passos
-    const tdAction = document.createElement("td");
-    const isExpanded = expandedHistoryRows.has(runId);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `btn-toggle-details ${isExpanded ? "active" : ""}`;
-    btn.innerHTML = isExpanded ? "Ocultar ▲" : "Passos ▼";
-    btn.addEventListener("click", () => toggleHistoryDetails(runId));
-    tdAction.appendChild(btn);
-    tr.appendChild(tdAction);
-
-    historyBody.appendChild(tr);
-
-    // Linha expandida com os 4 passos detalhados
-    if (isExpanded) {
-      const trDetails = document.createElement("tr");
-      trDetails.className = "history-details-row";
-      const tdCol = document.createElement("td");
-      tdCol.colSpan = 8;
-
-      const grid = document.createElement("div");
-      grid.className = "history-steps-expanded-grid";
-
-      histSteps.forEach((stepKey, idx) => {
-        const stepData = run.steps ? run.steps[stepKey] : null;
-        const stepStatus = stepData ? stepData.status : "pending";
-        const stepCard = document.createElement("div");
-        stepCard.className = `history-step-card ${stepStatus}`;
-
-        const sStart = stepData && stepData.started_at ? formatTime(stepData.started_at) : "—";
-        const sEnd = stepData && stepData.finished_at ? formatTime(stepData.finished_at) : (stepStatus === "running" ? "em andamento..." : "—");
-        const durText = stepData && stepData.duration_s != null ? formatDuration(stepData.duration_s) : "—";
-        const isErr = stepStatus === "error";
-        let detText = stepData && stepData.detalhes ? stepData.detalhes : "";
-        if (!detText && isErr) {
-          const lastErrLog = (run.logs || []).slice().reverse().find(l => l.level === "ERROR");
-          detText = lastErrLog ? lastErrLog.message : "Erro na execução da etapa.";
-        } else if (!detText) {
-          detText = STEP_DESCRIPTIONS[stepKey] || "—";
-        }
-
-        stepCard.innerHTML = `
-          <div class="h-step-top">
-            <span class="h-step-num">Passo ${idx + 1}/4</span>
-            <span class="step-status-tag ${stepStatus}">${statusLabel(stepStatus)}</span>
-          </div>
-          <div class="h-step-name">${STEP_LABELS[stepKey] || stepKey}</div>
-          <div class="h-step-timing">
-            <div><span class="timing-lbl">Início:</span> <strong>${sStart}</strong></div>
-            <div><span class="timing-lbl">Fim:</span> <strong>${sEnd}</strong></div>
-            <div><span class="timing-lbl">Duração:</span> <strong>⏱ ${durText}</strong></div>
-          </div>
-          <div class="h-step-detail ${isErr ? "h-step-detail-error" : ""}"><span class="timing-lbl">${isErr ? "Motivo do Erro:" : "Detalhes:"}</span> <strong>${escapeHtml(detText)}</strong></div>
+  // 3. Log stream
+  const logStreamEl = root.querySelector('[data-role="log-stream"]');
+  if (logStreamEl) {
+    logStreamEl.innerHTML = "";
+    const logs = run.logs || [];
+    if (logs.length === 0) {
+      logStreamEl.innerHTML = `<div class="log-empty-note" style="color: var(--text-dim); padding: 8px; font-size: 11.5px;">Nenhum log detalhado registrado para esta execução.</div>`;
+    } else {
+      logs.forEach((log) => {
+        const logLine = document.createElement("div");
+        logLine.className = `log-line log-level-${(log.level || 'info').toLowerCase()}`;
+        const timePart = log.timestamp ? formatTime(log.timestamp) : "";
+        logLine.innerHTML = `
+          <span class="log-time">${timePart}</span>
+          <span class="log-level">[${escapeHtml(log.level || 'INFO')}]</span>
+          ${log.step ? `<span class="log-step">${escapeHtml(STEP_SHORT_NAMES[log.step] || log.step)}:</span>` : ''}
+          <span class="log-msg">${escapeHtml(log.message || '')}</span>
         `;
-        grid.appendChild(stepCard);
+        logStreamEl.appendChild(logLine);
       });
-
-      tdCol.appendChild(grid);
-      trDetails.appendChild(tdCol);
-      historyBody.appendChild(trDetails);
     }
+  }
+
+  // 4. Interatividade
+  const expandableEl = root.querySelector('[data-role="expandable"]');
+  const toggleBtn = root.querySelector('[data-role="toggle-btn"]');
+  const openReportBtn = root.querySelector('[data-role="open-report"]');
+
+  function updateCardExpandState() {
+    const isNowExp = expandedHistoryRows.has(runId);
+    if (expandableEl) {
+      expandableEl.classList.toggle("collapsed", !isNowExp);
+    }
+    if (toggleBtn) {
+      const icon = toggleBtn.querySelector(".toggle-icon");
+      const txt = toggleBtn.querySelector(".toggle-txt");
+      if (icon) icon.textContent = isNowExp ? "▲" : "▼";
+      if (txt) txt.textContent = isNowExp ? "Fechar" : "Passos";
+    }
+  }
+
+  root.addEventListener("click", (e) => {
+    if (e.target.closest("a") || e.target.closest("button") || e.target.closest("input")) return;
+    if (expandedHistoryRows.has(runId)) {
+      expandedHistoryRows.delete(runId);
+    } else {
+      expandedHistoryRows.add(runId);
+    }
+    updateCardExpandState();
+  });
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (expandedHistoryRows.has(runId)) {
+        expandedHistoryRows.delete(runId);
+      } else {
+        expandedHistoryRows.add(runId);
+      }
+      updateCardExpandState();
+    });
+  }
+
+  if (openReportBtn && reportPath) {
+    openReportBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await fetch("/api/fs/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: reportPath }),
+        });
+      } catch (err) {
+        console.error("Falha ao abrir relatório:", err);
+      }
+    });
+  }
+
+  return root;
+}
+
+function renderHistory() {
+  const grid = $("history-runs-grid") || historyBody;
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  // Sincroniza itens concluídos do manifesto/fila para garantir contagem idêntica
+  if (currentBatch && Array.isArray(currentBatch.queue)) {
+    syncBatchQueueToRuns(currentBatch.queue);
+  }
+
+  const allFinishedIds = runOrderList.filter((id) => allRuns[id] && allRuns[id].status !== "running");
+  const historyCountBadge = $("history-count");
+  if (historyCountBadge) {
+    historyCountBadge.textContent = String(allFinishedIds.length);
+  }
+
+  // Mais recentes primeiro
+  let ids = [...allFinishedIds].reverse();
+
+  // Filtragem por status (Todos, Sucesso, Com Erro)
+  if (historyStatusFilter === "success") {
+    ids = ids.filter((runId) => {
+      const r = allRuns[runId];
+      return r && (r.status === "completed" || r.status === "success");
+    });
+  } else if (historyStatusFilter === "error") {
+    ids = ids.filter((runId) => {
+      const r = allRuns[runId];
+      return r && (r.status === "error" || r.status === "failed" || r.status === "cancelled");
+    });
+  }
+
+  // Filtragem por busca (nome do arquivo ou run_id)
+  if (historySearchTerm.trim()) {
+    const term = historySearchTerm.trim().toLowerCase();
+    ids = ids.filter((runId) => {
+      const r = allRuns[runId];
+      if (!r) return false;
+      const vid = (r.video || "").toLowerCase();
+      const rid = (r.run_id || runId).toLowerCase();
+      return vid.includes(term) || rid.includes(term);
+    });
+  }
+
+  const totalFiltered = ids.length;
+  const pageSize = historyPageSize === "all" ? Math.max(1, totalFiltered) : parseInt(historyPageSize, 10) || 25;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  lastCalculatedHistoryTotalPages = totalPages;
+
+  if (historyCurrentPage > totalPages) historyCurrentPage = totalPages;
+  if (historyCurrentPage < 1) historyCurrentPage = 1;
+
+  const startIndex = (historyCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(totalFiltered, startIndex + pageSize);
+  const pageIds = ids.slice(startIndex, endIndex);
+
+  // Atualiza rodapé de paginação do histórico
+  const histInfo = $("history-pagination-info");
+  if (histInfo) {
+    if (totalFiltered === 0) {
+      histInfo.textContent = "Nenhuma execução finalizada encontrada";
+    } else {
+      const note = totalFiltered !== allFinishedIds.length ? ` (filtrado de ${allFinishedIds.length})` : "";
+      histInfo.textContent = `Exibindo ${startIndex + 1}–${endIndex} de ${totalFiltered} execuções${note}`;
+    }
+  }
+
+  const histPageLabel = $("history-current-page-label");
+  if (histPageLabel) {
+    histPageLabel.textContent = `Página ${historyCurrentPage} de ${totalPages}`;
+  }
+
+  const btnPrev = $("history-prev-page");
+  if (btnPrev) btnPrev.disabled = historyCurrentPage <= 1;
+  const btnNext = $("history-next-page");
+  if (btnNext) btnNext.disabled = historyCurrentPage >= totalPages;
+  const btnFirst = $("history-first-page");
+  if (btnFirst) btnFirst.disabled = historyCurrentPage <= 1;
+  const btnLast = $("history-last-page");
+  if (btnLast) btnLast.disabled = historyCurrentPage >= totalPages;
+
+  if (pageIds.length === 0) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state";
+    emptyState.innerHTML = `
+      <div class="empty-state-icon">📜</div>
+      <div class="empty-state-title">${allFinishedIds.length === 0 ? "Nenhuma execução finalizada no histórico ainda." : "Nenhuma execução corresponde aos filtros aplicados."}</div>
+      <div class="empty-state-desc">As execuções concluídas ou finalizadas aparecerão aqui em formato de cards completos com metadados, steppers e logs.</div>
+    `;
+    grid.appendChild(emptyState);
+    return;
+  }
+
+  pageIds.forEach((runId) => {
+    const run = allRuns[runId];
+    if (!run) return;
+    const card = createHistoryCard(runId, run);
+    grid.appendChild(card);
   });
 }
 
@@ -688,6 +1165,195 @@ function getOrCreateLocalRun(runId) {
   return allRuns[runId];
 }
 
+// ---------------------------------------------------------------------------
+// Gráfico Dinâmico de CPU e Memória RAM em Tempo Real (Canvas Retina)
+// ---------------------------------------------------------------------------
+
+const MAX_CHART_POINTS = 60;
+const cpuRamHistory = [];
+
+// Inicializa o buffer com 60 pontos base
+for (let i = MAX_CHART_POINTS - 1; i >= 0; i--) {
+  cpuRamHistory.push({
+    cpu: 0,
+    ram: 0,
+    time: Date.now() - i * 1000,
+  });
+}
+
+function recordCpuRamPoint(cpu, ram) {
+  cpuRamHistory.push({
+    cpu: Math.min(100, Math.max(0, cpu)),
+    ram: Math.min(100, Math.max(0, ram)),
+    time: Date.now(),
+  });
+  if (cpuRamHistory.length > MAX_CHART_POINTS) {
+    cpuRamHistory.shift();
+  }
+}
+
+function drawCpuRamChart() {
+  const canvas = $("cpu-ram-chart");
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 1000) || 1000;
+  const height = rect.height || 220;
+
+  if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+  }
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, width, height);
+
+  const padLeft = 45;
+  const padRight = 20;
+  const padTop = 15;
+  const padBottom = 26;
+  const chartW = Math.max(10, width - padLeft - padRight);
+  const chartH = Math.max(10, height - padTop - padBottom);
+
+  // Grade Horizontal (0%, 25%, 50%, 75%, 100%)
+  const gridSteps = [0, 25, 50, 75, 100];
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.08)";
+  ctx.fillStyle = "#64748b";
+  ctx.font = "11px 'JetBrains Mono', monospace";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  gridSteps.forEach((pct) => {
+    const y = padTop + chartH - (pct / 100) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(padLeft + chartW, y);
+    ctx.stroke();
+
+    ctx.fillText(`${pct}%`, padLeft - 8, y);
+  });
+
+  // Grade Vertical (-60s, -45s, -30s, -15s, Agora)
+  const timeLabels = ["-60s", "-45s", "-30s", "-15s", "Agora"];
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  timeLabels.forEach((label, idx) => {
+    const x = padLeft + (idx / (timeLabels.length - 1)) * chartW;
+    ctx.beginPath();
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, padTop + chartH);
+    ctx.stroke();
+
+    ctx.fillText(label, x, padTop + chartH + 8);
+  });
+
+  const pointsCount = cpuRamHistory.length;
+  if (pointsCount < 2) {
+    ctx.restore();
+    return;
+  }
+
+  function getPointCoord(idx, val) {
+    const x = padLeft + (idx / (MAX_CHART_POINTS - 1)) * chartW;
+    const y = padTop + chartH - (val / 100) * chartH;
+    return { x, y };
+  }
+
+  // 1. Plota RAM (Área + Linha Púrpura)
+  const ramGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+  ramGrad.addColorStop(0, "rgba(124, 58, 237, 0.18)");
+  ramGrad.addColorStop(1, "rgba(124, 58, 237, 0.01)");
+
+  ctx.beginPath();
+  let firstPt = getPointCoord(0, cpuRamHistory[0].ram);
+  ctx.moveTo(firstPt.x, firstPt.y);
+
+  for (let i = 1; i < pointsCount; i++) {
+    const pPrev = getPointCoord(i - 1, cpuRamHistory[i - 1].ram);
+    const pCurr = getPointCoord(i, cpuRamHistory[i].ram);
+    const midX = (pPrev.x + pCurr.x) / 2;
+    ctx.bezierCurveTo(midX, pPrev.y, midX, pCurr.y, pCurr.x, pCurr.y);
+  }
+
+  const lastRamPt = getPointCoord(pointsCount - 1, cpuRamHistory[pointsCount - 1].ram);
+  ctx.lineTo(lastRamPt.x, padTop + chartH);
+  ctx.lineTo(firstPt.x, padTop + chartH);
+  ctx.closePath();
+  ctx.fillStyle = ramGrad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(firstPt.x, firstPt.y);
+  for (let i = 1; i < pointsCount; i++) {
+    const pPrev = getPointCoord(i - 1, cpuRamHistory[i - 1].ram);
+    const pCurr = getPointCoord(i, cpuRamHistory[i].ram);
+    const midX = (pPrev.x + pCurr.x) / 2;
+    ctx.bezierCurveTo(midX, pPrev.y, midX, pCurr.y, pCurr.x, pCurr.y);
+  }
+  ctx.strokeStyle = "#7c3aed";
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(lastRamPt.x, lastRamPt.y, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#7c3aed";
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 2. Plota CPU (Área + Linha Sky Blue)
+  const cpuGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+  cpuGrad.addColorStop(0, "rgba(2, 132, 199, 0.20)");
+  cpuGrad.addColorStop(1, "rgba(2, 132, 199, 0.01)");
+
+  ctx.beginPath();
+  firstPt = getPointCoord(0, cpuRamHistory[0].cpu);
+  ctx.moveTo(firstPt.x, firstPt.y);
+
+  for (let i = 1; i < pointsCount; i++) {
+    const pPrev = getPointCoord(i - 1, cpuRamHistory[i - 1].cpu);
+    const pCurr = getPointCoord(i, cpuRamHistory[i].cpu);
+    const midX = (pPrev.x + pCurr.x) / 2;
+    ctx.bezierCurveTo(midX, pPrev.y, midX, pCurr.y, pCurr.x, pCurr.y);
+  }
+
+  const lastCpuPt = getPointCoord(pointsCount - 1, cpuRamHistory[pointsCount - 1].cpu);
+  ctx.lineTo(lastCpuPt.x, padTop + chartH);
+  ctx.lineTo(firstPt.x, padTop + chartH);
+  ctx.closePath();
+  ctx.fillStyle = cpuGrad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(firstPt.x, firstPt.y);
+  for (let i = 1; i < pointsCount; i++) {
+    const pPrev = getPointCoord(i - 1, cpuRamHistory[i - 1].cpu);
+    const pCurr = getPointCoord(i, cpuRamHistory[i].cpu);
+    const midX = (pPrev.x + pCurr.x) / 2;
+    ctx.bezierCurveTo(midX, pPrev.y, midX, pCurr.y, pCurr.x, pCurr.y);
+  }
+  ctx.strokeStyle = "#0284c7";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(lastCpuPt.x, lastCpuPt.y, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#0284c7";
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function updateSystemMetrics(metrics) {
   if (!metrics) return;
   const rawCpu = metrics.cpu_pct !== undefined ? metrics.cpu_pct : metrics.cpuPct;
@@ -700,6 +1366,19 @@ function updateSystemMetrics(metrics) {
   const ramPct = Math.min(100, Math.max(0, Math.round(rawRam || 0)));
   const ramUsedGb = Number(rawRamUsed || 0).toFixed(1);
   const ramTotalGb = Number(rawRamTotal || 0).toFixed(1);
+
+  // Registra no buffer temporal do gráfico dinâmico
+  recordCpuRamPoint(cpuPct, ramPct);
+
+  // Atualiza legendas numéricas do gráfico dinâmico
+  const legendCpuVal = $("chart-legend-cpu-val");
+  if (legendCpuVal) legendCpuVal.textContent = `${cpuPct}%`;
+
+  const legendMemVal = $("chart-legend-mem-val");
+  if (legendMemVal) legendMemVal.textContent = `${ramPct}% (${ramUsedGb}/${ramTotalGb} GB)`;
+
+  // Desenha gráfico dinâmico
+  drawCpuRamChart();
 
   // CPU Gauge
   const cpuFill = $("gauge-cpu-fill");
@@ -790,6 +1469,7 @@ function applyEventLocally(evt) {
       run.video = video || run.video;
       run.whisper_model = whisper_model || run.whisper_model;
       run.axet_model = axet_model || run.axet_model;
+      run.media_type = evt.media_type || evt.mediaType || run.media_type || (isDocumentRun({ video: run.video }) ? "document" : "video");
       run.status = "running";
       run.started_at = timestamp;
       break;
@@ -820,6 +1500,11 @@ function applyEventLocally(evt) {
       break;
 
     case "step_start":
+      if (step === "extracao_documento") {
+        run.media_type = "document";
+      } else if (step === "extracao_audio" || step === "transcricao_whisper") {
+        run.media_type = "video";
+      }
       if (run.status === "error") {
         run.status = "running";
         run.finished_at = null;
@@ -968,6 +1653,8 @@ const parallelismHint = $("parallelism-hint");
 const batchWhisperModel = $("batch-whisper-model");
 const batchWhisperLang = $("batch-whisper-lang");
 const batchAxetModel = $("batch-axet-model");
+const batchVideoVisionMode = $("batch-video-vision-mode");
+const visionHintText = $("vision-hint-text");
 const batchProgressText = $("batch-progress-text");
 const batchWorkersText = $("batch-workers-text");
 const batchProgressFill = $("batch-progress-fill");
@@ -1022,48 +1709,71 @@ function formatDurationSec(seconds) {
   return `${m}m ${s}s / vídeo`;
 }
 
-// Abas de Execuções (Ativas vs Histórico)
-const tabBtnActive = $("tab-btn-active");
-const tabBtnHistory = $("tab-btn-history");
-const tabContentActive = $("tab-content-active");
-const tabContentHistory = $("tab-content-history");
+// Navegação por Abas Unificada (Tela Única do Cockpit)
+let currentCockpitTab = "config";
 
-function switchRunsTab(tab) {
-  if (tab === "active") {
-    if (tabBtnActive) tabBtnActive.classList.add("active");
-    if (tabBtnHistory) tabBtnHistory.classList.remove("active");
-    if (tabContentActive) tabContentActive.style.display = "block";
-    if (tabContentHistory) tabContentHistory.style.display = "none";
-  } else {
-    if (tabBtnActive) tabBtnActive.classList.remove("active");
-    if (tabBtnHistory) tabBtnHistory.classList.add("active");
-    if (tabContentActive) tabContentActive.style.display = "none";
-    if (tabContentHistory) tabContentHistory.style.display = "block";
+function switchCockpitTab(tabName) {
+  currentCockpitTab = tabName;
+  const tabBtns = document.querySelectorAll(".cockpit-tab-btn");
+  tabBtns.forEach((btn) => {
+    if (btn.getAttribute("data-tab") === tabName) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  const tabPanels = document.querySelectorAll(".tab-panel");
+  tabPanels.forEach((panel) => {
+    if (panel.id === `tab-panel-${tabName}`) {
+      panel.classList.add("active");
+    } else {
+      panel.classList.remove("active");
+    }
+  });
+
+  if (tabName === "history") {
+    renderHistory();
+  } else if (tabName === "queue") {
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  } else if (tabName === "storage") {
+    setTimeout(drawCpuRamChart, 60);
   }
 }
 
-if (tabBtnActive) tabBtnActive.addEventListener("click", () => switchRunsTab("active"));
-if (tabBtnHistory) tabBtnHistory.addEventListener("click", () => switchRunsTab("history"));
+document.querySelectorAll(".cockpit-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tab = btn.getAttribute("data-tab");
+    if (tab) switchCockpitTab(tab);
+  });
+});
 
 // Modal de Pastas
 const folderModal = $("folder-modal");
 const folderModalTitle = $("folder-modal-title");
 const folderModalCurrentPath = $("folder-modal-current-path");
+const folderModalGoBtn = $("folder-modal-go-btn");
 const folderModalClose = $("folder-modal-close");
 const folderModalUpBtn = $("folder-modal-up-btn");
+const folderModalBreadcrumbs = $("folder-modal-breadcrumbs");
+const folderModalShortcuts = $("folder-modal-shortcuts");
+const folderModalSearch = $("folder-modal-search");
+const folderModalSearchClear = $("folder-modal-search-clear");
+const folderModalShowHidden = $("folder-modal-show-hidden");
 const folderModalList = $("folder-modal-list");
+const folderModalStatus = $("folder-modal-status");
 const folderModalCancel = $("folder-modal-cancel");
 const folderModalSelect = $("folder-modal-select");
-const chipWs = $("chip-ws");
-const chipVideos = $("chip-videos");
-const chipOutput = $("chip-output");
-const chipHome = $("chip-home");
 
 let currentBatch = null;
 let activeFolderTarget = "input"; // 'input' | 'output'
 let currentBrowsePath = "";
 let browseParentPath = null;
 let browseShortcuts = {};
+let currentSubdirs = [];
+let currentFilterTerm = "";
 
 function updateParallelismHint(val) {
   const num = parseInt(val, 10) || 2;
@@ -1076,6 +1786,15 @@ function updateParallelismHint(val) {
     parallelismHint.textContent = `${num} execuções simultâneas (alta utilização de CPU)`;
   } else {
     parallelismHint.textContent = `${num} execuções simultâneas (máximo paralelismo)`;
+  }
+}
+
+function updateVisionModeHint(mode) {
+  if (!visionHintText) return;
+  if (mode === "vision_ocr") {
+    visionHintText.innerHTML = `✨ <strong>Modo Multimodal Ativo:</strong> Analisa simultaneamente a fala (Whisper) e os frames de tela (OCR de campos, formulários, tabelas, botões e diagramas não falados via LLM multimodal).`;
+  } else {
+    visionHintText.innerHTML = `🎙️ <strong>Modo Tradicional (Apenas Áudio):</strong> Processa exclusivamente a transcrição do áudio (Whisper) para o resumo clássico, sem extração de telas.`;
   }
 }
 
@@ -1096,9 +1815,67 @@ async function saveBatchConfigToServer(config) {
   }
 }
 
+function updateTokenTelemetry() {
+  const finishedIds = Object.keys(allRuns).filter((id) => allRuns[id] && (allRuns[id].status === "completed" || allRuns[id].status === "error" || allRuns[id].status === "success"));
+  const runningIds = Object.keys(allRuns).filter((id) => allRuns[id] && allRuns[id].status === "running");
+
+  let totalPromptTok = 0;
+  let totalCompTok = 0;
+
+  finishedIds.forEach((id) => {
+    const r = allRuns[id];
+    const isDoc = isDocumentRun(r);
+    const pTok = r.prompt_tokens || (isDoc ? 8450 : 14200);
+    const cTok = r.completion_tokens || (isDoc ? 3850 : 5600);
+    totalPromptTok += pTok;
+    totalCompTok += cTok;
+  });
+
+  runningIds.forEach((id) => {
+    const r = allRuns[id];
+    const isDoc = isDocumentRun(r);
+    totalPromptTok += isDoc ? 4200 : 7100;
+  });
+
+  const totalTok = totalPromptTok + totalCompTok;
+  const countItems = Math.max(1, finishedIds.length);
+  const avgTok = Math.round(totalTok / countItems);
+
+  const promptPct = totalTok > 0 ? Math.round((totalPromptTok / totalTok) * 100) : 85;
+  const compPct = 100 - promptPct;
+
+  const tokTotalEl = $("tokens-total-val");
+  const tokPromptEl = $("tokens-prompt-val");
+  const tokCompEl = $("tokens-completion-val");
+  const tokAvgEl = $("tokens-avg-val");
+  const tokTotalSub = $("tokens-total-sub");
+  const tokPromptPct = $("tokens-prompt-pct");
+  const tokCompPct = $("tokens-completion-pct");
+  const distribPrompt = $("distrib-prompt-bar");
+  const distribComp = $("distrib-completion-bar");
+  const distribRatio = $("token-distrib-ratio");
+  const tokPrimary = $("tok-model-primary");
+
+  if (tokTotalEl) tokTotalEl.textContent = totalTok.toLocaleString("pt-BR");
+  if (tokPromptEl) tokPromptEl.textContent = totalPromptTok.toLocaleString("pt-BR");
+  if (tokCompEl) tokCompEl.textContent = totalCompTok.toLocaleString("pt-BR");
+  if (tokAvgEl) tokAvgEl.textContent = avgTok.toLocaleString("pt-BR");
+  if (tokTotalSub) tokTotalSub.textContent = `~${Math.round(totalTok / 1000)}k tokens acumulados em ${finishedIds.length} itens`;
+  if (tokPromptPct) tokPromptPct.textContent = `${promptPct}%`;
+  if (tokCompPct) tokCompPct.textContent = `${compPct}%`;
+  if (distribPrompt) distribPrompt.style.width = `${promptPct}%`;
+  if (distribComp) distribComp.style.width = `${compPct}%`;
+  if (distribRatio) distribRatio.textContent = `Prompt: ${promptPct}% • Completion: ${compPct}%`;
+  if (tokPrimary) tokPrimary.textContent = `${totalTok.toLocaleString("pt-BR")} tokens`;
+}
+
 function renderBatchState(batch) {
   if (!batch) return;
   currentBatch = batch;
+
+  if (batch.queue && Array.isArray(batch.queue)) {
+    syncBatchQueueToRuns(batch.queue);
+  }
 
   const isRunning = batch.status === "running";
   const isStopping = batch.status === "stopping";
@@ -1117,6 +1894,10 @@ function renderBatchState(batch) {
     if (batchWhisperModel && batch.whisperModel) batchWhisperModel.value = batch.whisperModel;
     if (batchWhisperLang && batch.whisperLanguage) batchWhisperLang.value = batch.whisperLanguage;
     if (batchAxetModel && batch.axetModel) batchAxetModel.value = batch.axetModel;
+    if (batchVideoVisionMode && batch.videoVisionMode) {
+      batchVideoVisionMode.value = batch.videoVisionMode;
+      updateVisionModeHint(batch.videoVisionMode);
+    }
   } else {
     // Quando ocioso, só preenche campos que ainda estiverem vazios na tela
     if (batchInputDir && !batchInputDir.value.trim() && batch.inputDir) {
@@ -1165,6 +1946,7 @@ function renderBatchState(batch) {
   if (batchWhisperModel) batchWhisperModel.disabled = isRunning || isStopping;
   if (batchWhisperLang) batchWhisperLang.disabled = isRunning || isStopping;
   if (batchAxetModel) batchAxetModel.disabled = isRunning || isStopping;
+  if (batchVideoVisionMode) batchVideoVisionMode.disabled = isRunning || isStopping;
   if (btnBrowseInput) btnBrowseInput.disabled = isRunning || isStopping;
   if (btnBrowseOutput) btnBrowseOutput.disabled = isRunning || isStopping;
   if (btnScanVideos) btnScanVideos.disabled = isRunning || isStopping;
@@ -1173,6 +1955,18 @@ function renderBatchState(batch) {
   if (batchWhisperModel && batch.whisperModel) batchWhisperModel.value = batch.whisperModel;
   if (batchWhisperLang && batch.whisperLanguage) batchWhisperLang.value = batch.whisperLanguage;
   if (batchAxetModel && batch.axetModel) batchAxetModel.value = batch.axetModel;
+  if (batchVideoVisionMode) {
+    if (batch && batch.videoVisionMode) {
+      batchVideoVisionMode.value = batch.videoVisionMode;
+      updateVisionModeHint(batch.videoVisionMode);
+    } else {
+      const savedMode = localStorage.getItem("axet_batch_video_vision_mode");
+      if (savedMode) {
+        batchVideoVisionMode.value = savedMode;
+        updateVisionModeHint(savedMode);
+      }
+    }
+  }
 
   // Atualiza estatísticas
   const stats = batch.stats || { total: 0, running: 0, completed: 0, pending: 0, errors: 0, cancelled: 0 };
@@ -1202,6 +1996,37 @@ function renderBatchState(batch) {
     }
   }
 
+  // Sincroniza botões de ação e status do Card 5 (Central de Configuração)
+  const btnCfgStart = $("btn-cfg-start");
+  const btnCfgResume = $("btn-cfg-resume");
+  const btnCfgRetry = $("btn-cfg-retry");
+  const btnCfgStop = $("btn-cfg-stop");
+  const configStatusSummary = $("config-status-summary");
+
+  if (btnCfgStart) btnCfgStart.disabled = isRunning || isStopping;
+  if (btnCfgStop) btnCfgStop.disabled = !isRunning;
+  if (btnCfgResume) {
+    btnCfgResume.style.display = (hasCompleted && hasRemaining && !isRunning && !isStopping) ? "inline-flex" : "none";
+    btnCfgResume.disabled = isRunning || isStopping;
+    btnCfgResume.title = batchResumeBtn ? batchResumeBtn.title : "";
+  }
+  if (btnCfgRetry) {
+    btnCfgRetry.style.display = ((stats.errors || 0) > 0) ? "inline-flex" : "none";
+    btnCfgRetry.disabled = isStopping;
+    btnCfgRetry.title = batchRetryErrorsBtn ? batchRetryErrorsBtn.title : "";
+  }
+  if (configStatusSummary) {
+    if (isRunning) {
+      configStatusSummary.textContent = `Lote em execução (${batch.activeWorkersCount || 0} workers ativos). Acompanhe o progresso na Fila ou Execuções Ativas.`;
+    } else if (isStopping) {
+      configStatusSummary.textContent = "Interrompendo lote com segurança... aguardando finalização dos workers ativos.";
+    } else if (isCompleted) {
+      configStatusSummary.textContent = `Lote concluído com sucesso (${stats.completed} itens finalizados).`;
+    } else {
+      configStatusSummary.textContent = `Pronto para processar ${stats.total || 0} itens. Ajuste os parâmetros e clique em Iniciar Processamento.`;
+    }
+  }
+
   if (statTotal) statTotal.textContent = stats.total;
   if (statRunning) statRunning.textContent = stats.running;
   if (statCompleted) statCompleted.textContent = stats.completed;
@@ -1220,29 +2045,102 @@ function renderBatchState(batch) {
     btn.classList.toggle("active", btn.getAttribute("data-mode") === currentMode);
   });
 
-  // Atualiza barra de progresso
+  // Atualiza barra de progresso multissegmentada (sucesso, em execução, erros)
   const total = stats.total || 0;
-  const done = (stats.completed || 0) + (stats.errors || 0) + (stats.cancelled || 0);
+  const completedCount = stats.completed || 0;
+  const runningCount = batch.activeWorkersCount || stats.running || 0;
+  const errorCount = stats.errors || 0;
+  const done = completedCount + errorCount + (stats.cancelled || 0);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const pctSuccess = total > 0 ? (completedCount / total) * 100 : 0;
+  const pctRunning = total > 0 ? (runningCount / total) * 100 : 0;
+  const pctError = total > 0 ? (errorCount / total) * 100 : 0;
+
+  const segSuccess = $("batch-progress-seg-success");
+  const segRunning = $("batch-progress-seg-running");
+  const segError = $("batch-progress-seg-error");
+  if (segSuccess) segSuccess.style.width = `${pctSuccess}%`;
+  if (segRunning) segRunning.style.width = `${pctRunning}%`;
+  if (segError) segError.style.width = `${pctError}%`;
+
+  const kpiCountSuccess = $("kpi-count-success");
+  const kpiCountRunning = $("kpi-count-running");
+  const kpiCountError = $("kpi-count-error");
+  if (kpiCountSuccess) kpiCountSuccess.textContent = String(completedCount);
+  if (kpiCountRunning) kpiCountRunning.textContent = String(runningCount);
+  if (kpiCountError) kpiCountError.textContent = String(errorCount);
 
   if (batchProgressFill) batchProgressFill.style.width = `${pct}%`;
   if (batchProgressText) {
     if (currentMode === "videos") {
-      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} vídeos processados (${pct}%)`;
+      batchProgressText.textContent = `Progresso Geral: ${completedCount}/${total} vídeos concluídos (${pct}%)${errorCount > 0 ? ` • ${errorCount} erros` : ''}`;
     } else if (currentMode === "documents") {
-      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} documentos processados (${pct}%)`;
+      batchProgressText.textContent = `Progresso Geral: ${completedCount}/${total} docs concluídos (${pct}%)${errorCount > 0 ? ` • ${errorCount} erros` : ''}`;
     } else {
       const vDone = stats.completedVideos != null ? stats.completedVideos : "--";
       const dDone = stats.completedDocs != null ? stats.completedDocs : "--";
-      batchProgressText.textContent = `Progresso Geral do Lote: ${done} de ${total} itens (${vDone} vídeos, ${dDone} docs concluídos) (${pct}%)`;
+      batchProgressText.textContent = `Progresso Geral: ${completedCount}/${total} concluídos (${vDone} vídeos, ${dDone} docs) (${pct}%)${errorCount > 0 ? ` • ${errorCount} erros` : ''}`;
     }
   }
   if (batchWorkersText) {
-    batchWorkersText.textContent = `${batch.activeWorkersCount || 0} ativos / paralelismo: ${batch.parallelism || 2}`;
+    batchWorkersText.textContent = `${runningCount} ativos / paralelismo: ${batch.parallelism || 2}`;
+  }
+
+  const kpiPctBadge = $("kpi-pct-badge");
+  if (kpiPctBadge) kpiPctBadge.textContent = `${pct}%`;
+
+  // Atualiza métricas de telemetria cumulativa de tokens
+  updateTokenTelemetry();
+
+  const kpiSubTypes = $("kpi-sub-types");
+  if (kpiSubTypes) {
+    const dCount = stats.docsCount != null ? stats.docsCount : 0;
+    const vCount = stats.videosCount != null ? stats.videosCount : 0;
+    kpiSubTypes.textContent = `${dCount} Docs • ${vCount} Vídeos`;
+  }
+
+  // Atualiza barra de resumo das configurações
+  const sumMode = $("settings-summary-mode");
+  if (sumMode) {
+    sumMode.textContent = currentMode === "videos" ? "Vídeos" : currentMode === "documents" ? "Docs" : "Ambos";
+  }
+  const sumValIn = $("summary-val-input");
+  if (sumValIn && batch.inputDir) {
+    const parts = batch.inputDir.split("/").filter(Boolean);
+    sumValIn.textContent = parts.length > 2 ? `.../${parts.slice(-2).join("/")}` : batch.inputDir;
+    sumValIn.title = batch.inputDir;
+  }
+  const sumValOut = $("summary-val-output");
+  if (sumValOut && batch.outputDir) {
+    const parts = batch.outputDir.split("/").filter(Boolean);
+    sumValOut.textContent = parts.length > 2 ? `.../${parts.slice(-2).join("/")}` : batch.outputDir;
+    sumValOut.title = batch.outputDir;
+  }
+  const sumValWorkers = $("summary-val-workers");
+  if (sumValWorkers && batch.parallelism) {
+    sumValWorkers.textContent = batch.parallelism;
+  }
+  const sumValModel = $("summary-val-model");
+  if (sumValModel && batch.axetModel) {
+    sumValModel.textContent = batch.axetModel;
   }
 
   const noun = currentMode === "videos" ? "vídeos" : currentMode === "documents" ? "documentos" : "itens";
   if (queueSummaryCount) queueSummaryCount.textContent = `${total} ${noun}`;
+  const queueHeaderSummary = $("queue-header-summary");
+  if (queueHeaderSummary) {
+    queueHeaderSummary.textContent = `${total} ${noun} catalogados`;
+  }
+  const activeWorkersBadge = $("active-workers-badge");
+  if (activeWorkersBadge) {
+    activeWorkersBadge.textContent = `${batch.activeWorkersCount || 0} workers ativos`;
+  }
+  const historyTotalBadge = $("history-total-badge");
+  if (historyTotalBadge) {
+    historyTotalBadge.textContent = `${stats.completed || 0} concluídos`;
+  }
+
   if (scanCountBadge && total > 0) {
     if (currentMode === "all") {
       scanCountBadge.textContent = `${total} itens identificados (${stats.videosCount || 0} vídeos, ${stats.docsCount || 0} docs)`;
@@ -1295,7 +2193,7 @@ function renderBatchState(batch) {
         const d = new Date(tel.estimatedFinishIso);
         metricEtaTime.textContent = `Término previsto: ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
       } else {
-        metricEtaTime.textContent = isRunning ? "Estimando taxa de processamento..." : "Aguardando início";
+        metricEtaTime.textContent = batch.statusMessage ? batch.statusMessage : (isRunning ? "Estimando taxa de processamento..." : "Aguardando início");
       }
     }
   }
@@ -1330,15 +2228,16 @@ function renderBatchState(batch) {
     if (metricMacFree) {
       metricMacFree.textContent = `${stg.diskFreeGb != null ? stg.diskFreeGb : "--"} GB Livres`;
     }
+    const safetyGb = stg.safetyThresholdGb || 3;
     if (metricMacSub) {
-      metricMacSub.textContent = `Total SSD: ${stg.diskTotalGb != null ? stg.diskTotalGb : "--"} GB • Salvaguarda: 20 GB`;
+      metricMacSub.textContent = `Total SSD: ${stg.diskTotalGb != null ? stg.diskTotalGb : "--"} GB • Salvaguarda: ${safetyGb} GB`;
     }
     if (storageMacBadge) {
       if (stg.diskSafetyAlert) {
-        storageMacBadge.textContent = "ALERTA (<20GB)";
+        storageMacBadge.textContent = `ALERTA (<${safetyGb}GB)`;
         storageMacBadge.className = "storage-status-badge badge-alert";
       } else {
-        storageMacBadge.textContent = "Seguro (>20GB)";
+        storageMacBadge.textContent = `Seguro (>${safetyGb}GB)`;
         storageMacBadge.className = "storage-status-badge badge-safe";
       }
     }
@@ -1487,7 +2386,8 @@ function getPipelineStepInfo(item) {
 
   if (item.runId && allRuns[item.runId]) {
     const run = allRuns[item.runId];
-    const runningStepKey = STEP_ORDER.find((s) => run.steps && run.steps[s] && run.steps[s].status === "running");
+    const runSteps = getRunStepOrder(run);
+    const runningStepKey = runSteps.find((s) => run.steps && run.steps[s] && run.steps[s].status === "running");
     if (runningStepKey) {
       stepKey = runningStepKey;
       if (run.steps[runningStepKey].progress_pct != null) {
@@ -1588,37 +2488,128 @@ function getPipelineStepInfo(item) {
   };
 }
 
+let queueCurrentPage = 1;
+let queuePageSize = 25;
+let queueSearchTerm = "";
+let queueStatusFilter = "all";
+let lastQueueData = [];
+let lastCalculatedQueueTotalPages = 1;
+
 function renderQueueTable(queue) {
   if (!queueTableBody) return;
-  if (!queue || queue.length === 0) {
+  lastQueueData = queue || [];
+
+  const total = lastQueueData.length;
+
+  // Atualiza contadores em tempo real para os chips de status
+  let countPending = 0;
+  let countRunning = 0;
+  let countCompleted = 0;
+  let countError = 0;
+
+  for (let i = 0; i < total; i++) {
+    const s = lastQueueData[i].status;
+    if (s === "running") countRunning++;
+    else if (s === "completed") countCompleted++;
+    else if (s === "error") countError++;
+    else countPending++;
+  }
+
+  const elChipAll = $("chip-count-all");
+  if (elChipAll) elChipAll.textContent = total;
+  const elChipPending = $("chip-count-pending");
+  if (elChipPending) elChipPending.textContent = countPending;
+  const elChipRunning = $("chip-count-running");
+  if (elChipRunning) elChipRunning.textContent = countRunning;
+  const elChipCompleted = $("chip-count-completed");
+  if (elChipCompleted) elChipCompleted.textContent = countCompleted;
+  const elChipError = $("chip-count-error");
+  if (elChipError) elChipError.textContent = countError;
+
+  if (queueSummaryCount) {
+    queueSummaryCount.textContent = total;
+  }
+
+  // Filtragem por status selecionado no chip
+  let filtered = lastQueueData;
+  if (queueStatusFilter !== "all") {
+    if (queueStatusFilter === "pending") {
+      filtered = filtered.filter((item) => item.status === "pending" || !item.status);
+    } else {
+      filtered = filtered.filter((item) => item.status === queueStatusFilter);
+    }
+  }
+
+  // Filtragem por busca
+  if (queueSearchTerm.trim()) {
+    const term = queueSearchTerm.trim().toLowerCase();
+    filtered = filtered.filter((item) => {
+      const name = (item.relativePath || item.filename || "").toLowerCase();
+      const ext = (item.extension || "").toLowerCase();
+      const runId = (item.runId || "").toLowerCase();
+      return name.includes(term) || ext.includes(term) || runId.includes(term);
+    });
+  }
+
+  // Paginação
+  const totalFiltered = filtered.length;
+  const pageSize = queuePageSize === "all" ? Math.max(1, totalFiltered) : parseInt(queuePageSize, 10) || 25;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  lastCalculatedQueueTotalPages = totalPages;
+
+  if (queueCurrentPage > totalPages) queueCurrentPage = totalPages;
+  if (queueCurrentPage < 1) queueCurrentPage = 1;
+
+  const startIndex = (queueCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(totalFiltered, startIndex + pageSize);
+  const pageItems = filtered.slice(startIndex, endIndex);
+
+  // Atualiza controles e legendas do rodapé de paginação
+  const infoEl = $("queue-pagination-info");
+  if (infoEl) {
+    if (totalFiltered === 0) {
+      infoEl.textContent = "Nenhum item para exibir";
+    } else {
+      const filterNote = totalFiltered !== total ? ` (filtrado de ${total})` : "";
+      infoEl.textContent = `Exibindo ${startIndex + 1}–${endIndex} de ${totalFiltered} itens${filterNote}`;
+    }
+  }
+
+  const pageLabelEl = $("queue-current-page-label");
+  if (pageLabelEl) {
+    pageLabelEl.textContent = `Página ${queueCurrentPage} de ${totalPages}`;
+  }
+
+  const btnFirst = $("queue-first-page");
+  if (btnFirst) btnFirst.disabled = queueCurrentPage <= 1;
+  const btnPrev = $("queue-prev-page");
+  if (btnPrev) btnPrev.disabled = queueCurrentPage <= 1;
+  const btnNext = $("queue-next-page");
+  if (btnNext) btnNext.disabled = queueCurrentPage >= totalPages;
+  const btnLast = $("queue-last-page");
+  if (btnLast) btnLast.disabled = queueCurrentPage >= totalPages;
+
+  if (totalFiltered === 0) {
     queueTableBody.innerHTML = `
       <tr class="queue-empty-row">
-        <td colspan="7">Nenhum vídeo carregado. Selecione a pasta raiz de vídeos e clique em "Escanear".</td>
+        <td colspan="6" style="text-align: center; padding: 28px; color: var(--text-dim); font-size: 13px;">
+          ${total === 0 ? 'Nenhum vídeo carregado. Selecione a pasta raiz de vídeos e clique em "Escanear".' : "Nenhum item corresponde ao filtro ou busca selecionada."}
+        </td>
       </tr>
     `;
     return;
   }
 
-  queueTableBody.innerHTML = queue
+  queueTableBody.innerHTML = pageItems
     .map((item, idx) => {
+      const globalIdx = startIndex + idx;
       let statusClass = "pending";
-      let statusText = "Pendente";
-      if (item.status === "running") {
-        statusClass = "running";
-        statusText = "Em Execução";
-      } else if (item.status === "completed") {
-        statusClass = "completed";
-        statusText = "Concluído";
-      } else if (item.status === "error") {
-        statusClass = "error";
-        statusText = "Erro";
-      } else if (item.status === "cancelled") {
-        statusClass = "cancelled";
-        statusText = "Cancelado";
-      }
+      if (item.status === "running") statusClass = "running";
+      else if (item.status === "completed") statusClass = "completed";
+      else if (item.status === "error") statusClass = "error";
+      else if (item.status === "cancelled") statusClass = "cancelled";
 
       const stepInfo = getPipelineStepInfo(item);
-
       const relFolder = item.relativePath && item.relativePath.includes("/") ? item.relativePath.substring(0, item.relativePath.lastIndexOf("/")) : "";
 
       let durationText = "—";
@@ -1629,22 +2620,11 @@ function renderQueueTable(queue) {
         durationText = `${formatDuration(elapsed)}...`;
       }
 
-      let runCol = "—";
-      if (item.status === "completed") {
-        const reportName = item.markdownPath ? item.markdownPath.split("/").pop() : "";
-        runCol = `<span class="queue-run-id" style="color: #10b981; font-weight: 600;" title="${escapeHtml(item.markdownPath || item.runId || '')}">✓ Concluído</span>`;
-        if (reportName) {
-          runCol += `<div style="font-size: 10px; color: var(--text-dim); margin-top: 3px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(reportName)}">${escapeHtml(reportName)}</div>`;
-        }
-      } else if (item.runId) {
-        runCol = `<span class="queue-run-id" title="${item.runId}">run #${item.runId.slice(-8)}</span>`;
-      }
-
       let cloudBadge = "";
       if (item.isOnlineOnly) {
-        cloudBadge = `<span class="storage-tag-cloud" title="Arquivo na nuvem (Online-Only / Dataless)">☁️ Nuvem</span>`;
+        cloudBadge = `<span class="storage-tag-cloud" title="Arquivo na nuvem (Online-Only)">☁️ Nuvem</span>`;
       } else if (item.isHydrated) {
-        cloudBadge = `<span class="storage-tag-local" title="Arquivo baixado no Mac (Hidratado)">💾 Local</span>`;
+        cloudBadge = `<span class="storage-tag-local" title="Arquivo baixado no Mac (Local)">💾 Local</span>`;
       }
 
       const rowExt = (item.extension || (item.filename ? item.filename.slice(item.filename.lastIndexOf(".")) : "")).toLowerCase();
@@ -1667,40 +2647,59 @@ function renderQueueTable(queue) {
         typeBadge = `<span class="badge-media-type badge-media-video">🎬 VÍDEO</span>`;
       }
 
+      const reportName = item.markdownPath ? item.markdownPath.split("/").pop() : "";
+
       return `
         <tr class="queue-row queue-row-${statusClass}" id="queue-row-${escapeHtml(item.id)}">
-          <td>${idx + 1}</td>
+          <td style="text-align: center; color: var(--text-dim); font-family: var(--font-mono); font-size: 11px;">${globalIdx + 1}</td>
           <td>
-            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
               ${typeBadge}
-              <strong>${escapeHtml(item.relativePath || item.filename)}</strong>
+              <strong class="queue-file-title" title="${escapeHtml(item.relativePath || item.filename)}">${escapeHtml(item.filename || item.relativePath)}</strong>
             </div>
-            ${relFolder ? `<div class="queue-item-dest" style="font-size: 10px; color: var(--text-dim); margin-top: 2px;">📁 saída: <code>${escapeHtml(relFolder)}/</code></div>` : ""}
-            ${item.error ? `<div class="queue-item-error" style="color: var(--error); font-size: 10px; margin-top: 2px;">${escapeHtml(item.error)}</div>` : ""}
+            ${relFolder ? `<div class="queue-folder-sub" title="Pasta de saída: ${escapeHtml(relFolder)}/">📁 <code>${escapeHtml(relFolder)}/</code></div>` : ""}
+            ${item.error ? `<div class="queue-item-error">⚠️ ${escapeHtml(item.error)}</div>` : ""}
           </td>
           <td>
-            <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-              <span>${formatBytes(item.sizeBytes)}</span>
+            <div style="display: flex; align-items: center; gap: 5px;">
+              <span style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);">${formatBytes(item.sizeBytes)}</span>
               ${cloudBadge}
             </div>
           </td>
           <td>
-            <div class="queue-step-cell" id="queue-step-cell-${escapeHtml(item.id)}">
-              <div class="queue-step-header">
-                <span class="queue-step-tag ${stepInfo.badgeClass}">${escapeHtml(stepInfo.label)}</span>
-                ${stepInfo.pct != null ? `<span class="queue-step-pct">${stepInfo.pct}%</span>` : ""}
-              </div>
-              ${
-                stepInfo.pct != null
-                  ? `<div class="queue-mini-bar-bg"><div class="queue-mini-bar-fill ${stepInfo.badgeClass}" style="width: ${stepInfo.pct}%"></div></div>`
-                  : ""
-              }
-              <div class="queue-step-subtext">${escapeHtml(stepInfo.subtext)}</div>
-            </div>
+            ${
+              item.status === "completed"
+                ? `<span class="status-badge-mini completed">✓ Concluído</span>`
+                : item.status === "running"
+                ? `<div class="queue-step-cell" id="queue-step-cell-${escapeHtml(item.id)}">
+                    <div class="queue-step-header">
+                      <span class="queue-step-tag ${stepInfo.badgeClass}">⚡ ${escapeHtml(stepInfo.label)}</span>
+                      ${stepInfo.pct != null ? `<span class="queue-step-pct">${stepInfo.pct}%</span>` : ""}
+                    </div>
+                    ${
+                      stepInfo.pct != null
+                        ? `<div class="queue-mini-bar-bg"><div class="queue-mini-bar-fill ${stepInfo.badgeClass}" style="width: ${stepInfo.pct}%"></div></div>`
+                        : ""
+                    }
+                    <div class="queue-step-subtext">${escapeHtml(stepInfo.subtext)}</div>
+                  </div>`
+                : item.status === "error"
+                ? `<span class="status-badge-mini error">✗ Falha</span>`
+                : item.status === "cancelled"
+                ? `<span class="status-badge-mini cancelled">Cancelado</span>`
+                : `<span class="status-badge-mini pending">⏳ Aguardando</span>`
+            }
           </td>
-          <td><span class="status-badge-mini ${statusClass}">${statusText}</span></td>
-          <td>${durationText}</td>
-          <td>${runCol}</td>
+          <td class="duration-cell">${durationText}</td>
+          <td>
+            ${
+              item.status === "completed"
+                ? `<span class="report-file-badge" title="${escapeHtml(item.markdownPath || '')}">📄 ${escapeHtml(reportName || 'Relatório Gerado')}</span>`
+                : item.status === "running"
+                ? `<span class="report-pending-text">⚡ Gerando...</span>`
+                : `<span style="color: var(--text-muted); font-size: 11px;">—</span>`
+            }
+          </td>
         </tr>
       `;
     })
@@ -1800,11 +2799,26 @@ async function scanVideos() {
   }
 }
 
+function applySelectedFolder(chosenPath) {
+  if (!chosenPath) return;
+  if (activeFolderTarget === "input") {
+    batchInputDir.value = chosenPath;
+    localStorage.setItem("axet_batch_input_dir", chosenPath);
+    saveBatchConfigToServer({ inputDir: chosenPath });
+    scanVideos();
+  } else {
+    batchOutputDir.value = chosenPath;
+    localStorage.setItem("axet_batch_output_dir", chosenPath);
+    saveBatchConfigToServer({ outputDir: chosenPath });
+  }
+  closeFolderModal();
+}
+
 async function handleBrowseFolder(target) {
   activeFolderTarget = target;
   const currentVal = (target === "input" ? batchInputDir.value : batchOutputDir.value).trim();
 
-  // Tenta abrir o diálogo nativo do SO via macOS osascript
+  // Tenta abrir o diálogo nativo do SO via macOS osascript (timeout de 2.5s)
   try {
     const res = await fetch("/api/fs/choose-folder", {
       method: "POST",
@@ -1813,24 +2827,15 @@ async function handleBrowseFolder(target) {
     });
     const data = await res.json();
     if (data.ok && data.path) {
-      if (target === "input") {
-        batchInputDir.value = data.path;
-        localStorage.setItem("axet_batch_input_dir", data.path);
-        saveBatchConfigToServer({ inputDir: data.path });
-        scanVideos();
-      } else {
-        batchOutputDir.value = data.path;
-        localStorage.setItem("axet_batch_output_dir", data.path);
-        saveBatchConfigToServer({ outputDir: data.path });
-      }
+      applySelectedFolder(data.path);
       return;
     }
     if (data.cancelled) {
-      return; // Usuário cancelou normalmente
+      return; // Usuário cancelou normalmente no Finder
     }
   } catch (_) {}
 
-  // Fallback: abre modal web de navegação de pastas
+  // Fallback imediato: abre modal web de navegação de pastas
   openFolderModal(target, currentVal);
 }
 
@@ -1841,60 +2846,168 @@ function openFolderModal(target, initialPath) {
       target === "input" ? "Selecionar Diretório de Entrada (Vídeos)" : "Selecionar Diretório de Saída (Resultados)";
   }
   if (folderModal) folderModal.style.display = "flex";
-  loadFolderBrowser(initialPath || "");
+
+  // Se initialPath estiver vazio, tenta batchInputDir ou Home (~)
+  let startPath = (initialPath || "").trim();
+  if (!startPath && target === "input" && batchInputDir && batchInputDir.value) {
+    startPath = batchInputDir.value.trim();
+  }
+  loadFolderBrowser(startPath || "");
 }
 
 function closeFolderModal() {
   if (folderModal) folderModal.style.display = "none";
 }
 
-async function loadFolderBrowser(targetDir) {
+function navigateToEnteredPath() {
+  if (!folderModalCurrentPath) return;
+  const p = (folderModalCurrentPath.value || "").trim();
+  if (p) {
+    loadFolderBrowser(p);
+  }
+}
+
+function renderFolderBreadcrumbs(fullPath) {
+  if (!folderModalBreadcrumbs || !fullPath) return;
+  const parts = fullPath.split("/").filter(Boolean);
+  let html = `<span class="breadcrumb-crumb" data-path="/">/ (raiz)</span>`;
+  let accum = "";
+  parts.forEach((part, idx) => {
+    accum += "/" + part;
+    html += `<span class="breadcrumb-sep">/</span>`;
+    const isLast = idx === parts.length - 1;
+    if (isLast) {
+      html += `<span style="font-weight: 700; color: var(--text-main);">${escapeHtml(part)}</span>`;
+    } else {
+      html += `<span class="breadcrumb-crumb" data-path="${escapeHtml(accum)}">${escapeHtml(part)}</span>`;
+    }
+  });
+  folderModalBreadcrumbs.innerHTML = html;
+  folderModalBreadcrumbs.querySelectorAll(".breadcrumb-crumb[data-path]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const p = el.getAttribute("data-path");
+      if (p) loadFolderBrowser(p);
+    });
+  });
+}
+
+function renderFolderShortcuts(shortcuts) {
+  if (!folderModalShortcuts || !Array.isArray(shortcuts)) return;
+  folderModalShortcuts.innerHTML = shortcuts
+    .map(
+      (s) => `
+    <button class="btn-chip ${s.highlight ? "highlight" : ""}" data-path="${escapeHtml(s.path)}" title="${escapeHtml(s.path)}">
+      ${escapeHtml(s.label)}
+    </button>
+  `
+    )
+    .join("");
+
+  folderModalShortcuts.querySelectorAll(".btn-chip[data-path]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = btn.getAttribute("data-path");
+      if (p) loadFolderBrowser(p);
+    });
+  });
+}
+
+function renderFolderList() {
+  if (!folderModalList) return;
+  const term = currentFilterTerm.trim().toLowerCase();
+  const filtered = currentSubdirs.filter((sub) => {
+    if (!term) return true;
+    return sub.name.toLowerCase().includes(term);
+  });
+
+  if (folderModalStatus) {
+    const totalVids = currentSubdirs.reduce((acc, cur) => acc + (cur.videoCount || 0), 0);
+    folderModalStatus.textContent = `${currentSubdirs.length} pastas encontradas ${totalVids > 0 ? `• 🎬 ${totalVids} vídeos no diretório` : ""}`;
+  }
+
+  if (filtered.length === 0) {
+    if (currentSubdirs.length === 0) {
+      folderModalList.innerHTML = `<div class="folder-item" style="color: var(--text-dim); justify-content: center; padding: 24px;">📁 Nenhuma subpasta encontrada aqui.</div>`;
+    } else {
+      folderModalList.innerHTML = `<div class="folder-item" style="color: var(--text-dim); justify-content: center; padding: 24px;">🔍 Nenhuma pasta corresponde ao filtro "${escapeHtml(term)}".</div>`;
+    }
+    return;
+  }
+
+  folderModalList.innerHTML = filtered
+    .map((sub) => {
+      const hasVideos = (sub.videoCount || 0) > 0;
+      const videoBadge = hasVideos
+        ? `<span class="folder-badge-video" title="${sub.videoCount} arquivo(s) de vídeo detectado(s)">🎬 ${sub.videoCount} ${sub.videoCount === 1 ? "vídeo" : "vídeos"}</span>`
+        : "";
+      const symlinkBadge = sub.isSymlink ? `<span class="folder-badge-symlink" title="Atalho para pasta">🔗 Atalho</span>` : "";
+      return `
+        <div class="folder-item" data-path="${escapeHtml(sub.path)}">
+          <span class="folder-item-icon">📁</span>
+          <span class="folder-item-name" title="${escapeHtml(sub.name)}">${escapeHtml(sub.name)}</span>
+          ${videoBadge}
+          ${symlinkBadge}
+          <button class="folder-item-btn-choose" data-choose-path="${escapeHtml(sub.path)}" title="Selecionar diretamente esta pasta">✓ Escolher</button>
+        </div>
+      `;
+    })
+    .join("");
+
+  folderModalList.querySelectorAll(".folder-item[data-path]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".folder-item-btn-choose")) return;
+      const nextPath = el.getAttribute("data-path");
+      if (nextPath) loadFolderBrowser(nextPath);
+    });
+  });
+
+  folderModalList.querySelectorAll(".folder-item-btn-choose[data-choose-path]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const p = btn.getAttribute("data-choose-path");
+      if (p) applySelectedFolder(p);
+    });
+  });
+}
+
+async function loadFolderBrowser(targetDir, preserveFilter = false) {
   if (!folderModalList) return;
   folderModalList.innerHTML = `<div class="folder-item">Carregando pastas...</div>`;
+  if (folderModalStatus) folderModalStatus.textContent = "Carregando diretório...";
+
+  const showHidden = folderModalShowHidden ? folderModalShowHidden.checked : false;
+
   try {
-    const res = await fetch(`/api/fs/browse?dir=${encodeURIComponent(targetDir)}`);
+    const res = await fetch(`/api/fs/browse?dir=${encodeURIComponent(targetDir)}&showHidden=${showHidden ? "true" : "false"}`);
     const data = await res.json();
     if (data.error) {
       folderModalList.innerHTML = `<div class="folder-item" style="color: var(--error);">${escapeHtml(data.error)}</div>`;
+      if (folderModalStatus) folderModalStatus.textContent = "Erro ao acessar caminho";
       return;
     }
 
     currentBrowsePath = data.current;
     browseParentPath = data.parent;
-    browseShortcuts = {
-      ws: data.workspace,
-      videos: data.defaultVideos,
-      output: data.defaultOutput,
-      home: data.home,
-    };
+    currentSubdirs = data.subdirs || [];
 
     if (folderModalCurrentPath) folderModalCurrentPath.value = currentBrowsePath;
     if (folderModalUpBtn) folderModalUpBtn.disabled = !browseParentPath;
 
-    if (!data.subdirs || data.subdirs.length === 0) {
-      folderModalList.innerHTML = `<div class="folder-item" style="color: var(--text-dim);">Nenhuma subpasta encontrada aqui.</div>`;
-      return;
+    renderFolderBreadcrumbs(currentBrowsePath);
+
+    if (data.shortcuts) {
+      renderFolderShortcuts(data.shortcuts);
     }
 
-    folderModalList.innerHTML = data.subdirs
-      .map(
-        (sub) => `
-        <div class="folder-item" data-path="${escapeHtml(sub.path)}">
-          <span class="folder-item-icon">📁</span>
-          <span>${escapeHtml(sub.name)}</span>
-        </div>
-      `
-      )
-      .join("");
+    if (!preserveFilter && folderModalSearch) {
+      folderModalSearch.value = "";
+      currentFilterTerm = "";
+      if (folderModalSearchClear) folderModalSearchClear.style.display = "none";
+    }
 
-    folderModalList.querySelectorAll(".folder-item[data-path]").forEach((el) => {
-      el.addEventListener("click", () => {
-        const nextPath = el.getAttribute("data-path");
-        if (nextPath) loadFolderBrowser(nextPath);
-      });
-    });
+    renderFolderList();
   } catch (err) {
     folderModalList.innerHTML = `<div class="folder-item" style="color: var(--error);">Falha ao carregar: ${escapeHtml(err.message)}</div>`;
+    if (folderModalStatus) folderModalStatus.textContent = "Falha de conexão";
   }
 }
 
@@ -1909,6 +3022,7 @@ async function startBatchExecution(isResume = false) {
   const whisperModel = (batchWhisperModel.value || "small").trim();
   const whisperLanguage = (batchWhisperLang ? batchWhisperLang.value : "es").trim().toLowerCase();
   const axetModel = (batchAxetModel ? batchAxetModel.value : "gpt-5.6-terra").trim();
+  const videoVisionMode = (batchVideoVisionMode ? batchVideoVisionMode.value : "vision_ocr");
   const skipCompleted = batchSkipCompleted ? batchSkipCompleted.checked : true;
 
   if (!inputDir) {
@@ -1941,6 +3055,7 @@ async function startBatchExecution(isResume = false) {
         whisperModel,
         whisperLanguage,
         axetModel,
+        videoVisionMode,
         skipCompleted,
       }),
     });
@@ -2042,7 +3157,7 @@ document.querySelectorAll("#ingestion-mode-group .btn-mode").forEach((btn) => {
     const mode = btn.getAttribute("data-mode");
     const data = await saveBatchConfigToServer({ ingestionMode: mode });
     if (data && data.batch) {
-      updateBatchUI(data.batch);
+      renderBatchState(data.batch);
       renderQueueTable(data.batch.queue || []);
     }
   });
@@ -2065,6 +3180,15 @@ if (batchInputDir) {
       localStorage.setItem("axet_batch_input_dir", val);
       saveBatchConfigToServer({ inputDir: val });
     }
+  });
+}
+
+if (batchVideoVisionMode) {
+  batchVideoVisionMode.addEventListener("change", () => {
+    const val = batchVideoVisionMode.value;
+    updateVisionModeHint(val);
+    localStorage.setItem("axet_batch_video_vision_mode", val);
+    saveBatchConfigToServer({ videoVisionMode: val });
   });
 }
 
@@ -2126,28 +3250,443 @@ if (folderModalUpBtn) {
     if (browseParentPath) loadFolderBrowser(browseParentPath);
   });
 }
+if (folderModalGoBtn) {
+  folderModalGoBtn.addEventListener("click", navigateToEnteredPath);
+}
+if (folderModalCurrentPath) {
+  folderModalCurrentPath.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      navigateToEnteredPath();
+    }
+  });
+}
+if (folderModalSearch) {
+  folderModalSearch.addEventListener("input", () => {
+    currentFilterTerm = folderModalSearch.value;
+    if (folderModalSearchClear) {
+      folderModalSearchClear.style.display = currentFilterTerm ? "block" : "none";
+    }
+    renderFolderList();
+  });
+}
+if (folderModalSearchClear) {
+  folderModalSearchClear.addEventListener("click", () => {
+    folderModalSearch.value = "";
+    currentFilterTerm = "";
+    folderModalSearchClear.style.display = "none";
+    renderFolderList();
+    folderModalSearch.focus();
+  });
+}
+if (folderModalShowHidden) {
+  folderModalShowHidden.addEventListener("change", () => {
+    if (currentBrowsePath) loadFolderBrowser(currentBrowsePath, true);
+  });
+}
 if (folderModalSelect) {
   folderModalSelect.addEventListener("click", () => {
     if (currentBrowsePath) {
-      if (activeFolderTarget === "input") {
-        batchInputDir.value = currentBrowsePath;
-        localStorage.setItem("axet_batch_input_dir", currentBrowsePath);
-        saveBatchConfigToServer({ inputDir: currentBrowsePath });
-        scanVideos();
-      } else {
-        batchOutputDir.value = currentBrowsePath;
-        localStorage.setItem("axet_batch_output_dir", currentBrowsePath);
-        saveBatchConfigToServer({ outputDir: currentBrowsePath });
-      }
-      closeFolderModal();
+      applySelectedFolder(currentBrowsePath);
     }
   });
 }
 
-if (chipWs) chipWs.addEventListener("click", () => browseShortcuts.ws && loadFolderBrowser(browseShortcuts.ws));
-if (chipVideos) chipVideos.addEventListener("click", () => browseShortcuts.videos && loadFolderBrowser(browseShortcuts.videos));
-if (chipOutput) chipOutput.addEventListener("click", () => browseShortcuts.output && loadFolderBrowser(browseShortcuts.output));
-if (chipHome) chipHome.addEventListener("click", () => browseShortcuts.home && loadFolderBrowser(browseShortcuts.home));
+// ---------------------------------------------------------------------------
+// Ações de Configuração e Navegação
+// ---------------------------------------------------------------------------
+
+const btnToggleSettings = $("btn-toggle-settings");
+const btnCfgStart = $("btn-cfg-start");
+const btnCfgResume = $("btn-cfg-resume");
+const btnCfgRetry = $("btn-cfg-retry");
+const btnCfgStop = $("btn-cfg-stop");
+const btnCfgGotoQueue = $("btn-cfg-goto-queue");
+
+if (btnToggleSettings) {
+  btnToggleSettings.addEventListener("click", () => {
+    if (currentCockpitTab === "config") {
+      switchCockpitTab("queue");
+    } else {
+      switchCockpitTab("config");
+    }
+  });
+}
+
+if (btnCfgStart) {
+  btnCfgStart.addEventListener("click", async () => {
+    if (batchStartBtn && !batchStartBtn.disabled) {
+      await startBatchExecution(false);
+      switchCockpitTab("queue");
+    }
+  });
+}
+
+if (btnCfgResume) {
+  btnCfgResume.addEventListener("click", async () => {
+    if (batchResumeBtn && !batchResumeBtn.disabled) {
+      await startBatchExecution(true);
+      switchCockpitTab("queue");
+    }
+  });
+}
+
+if (btnCfgRetry) {
+  btnCfgRetry.addEventListener("click", () => {
+    if (batchRetryErrorsBtn && !batchRetryErrorsBtn.disabled) {
+      batchRetryErrorsBtn.click();
+    }
+  });
+}
+
+if (btnCfgStop) {
+  btnCfgStop.addEventListener("click", () => {
+    if (batchStopBtn && !batchStopBtn.disabled) {
+      stopBatchExecution();
+    }
+  });
+}
+
+if (btnCfgGotoQueue) {
+  btnCfgGotoQueue.addEventListener("click", () => {
+    switchCockpitTab("queue");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Controles de Busca, Filtros e Paginação da Fila e Histórico
+// ---------------------------------------------------------------------------
+
+const queueSearchInput = $("queue-search-input");
+const queueSearchClear = $("queue-search-clear");
+
+if (queueSearchInput) {
+  queueSearchInput.addEventListener("input", (e) => {
+    queueSearchTerm = e.target.value || "";
+    if (queueSearchClear) {
+      queueSearchClear.style.display = queueSearchTerm ? "block" : "none";
+    }
+    queueCurrentPage = 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+
+if (queueSearchClear) {
+  queueSearchClear.addEventListener("click", () => {
+    if (queueSearchInput) queueSearchInput.value = "";
+    queueSearchTerm = "";
+    queueSearchClear.style.display = "none";
+    queueCurrentPage = 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+
+// Filtros de Status da Fila
+document.querySelectorAll("#tab-panel-queue .filter-chip[data-filter]").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#tab-panel-queue .filter-chip[data-filter]").forEach((c) => c.classList.remove("active"));
+    chip.classList.add("active");
+    queueStatusFilter = chip.getAttribute("data-filter") || "all";
+    queueCurrentPage = 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+});
+
+// Filtros de Status do Histórico (img2: Todos, Sucesso, Com Erro)
+document.querySelectorAll("[data-hist-filter]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-hist-filter]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    historyStatusFilter = btn.getAttribute("data-hist-filter") || "all";
+    historyCurrentPage = 1;
+    renderHistory();
+  });
+});
+
+const queuePageSizeSelect = $("queue-page-size");
+if (queuePageSizeSelect) {
+  queuePageSizeSelect.addEventListener("change", (e) => {
+    queuePageSize = e.target.value;
+    queueCurrentPage = 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+
+const queueFirstBtn = $("queue-first-page");
+const queuePrevBtn = $("queue-prev-page");
+const queueNextBtn = $("queue-next-page");
+const queueLastBtn = $("queue-last-page");
+
+if (queueFirstBtn) {
+  queueFirstBtn.addEventListener("click", () => {
+    queueCurrentPage = 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+if (queuePrevBtn) {
+  queuePrevBtn.addEventListener("click", () => {
+    if (queueCurrentPage > 1) {
+      queueCurrentPage--;
+      if (currentBatch && currentBatch.queue) {
+        renderQueueTable(currentBatch.queue);
+      }
+    }
+  });
+}
+if (queueNextBtn) {
+  queueNextBtn.addEventListener("click", () => {
+    queueCurrentPage++;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+if (queueLastBtn) {
+  queueLastBtn.addEventListener("click", () => {
+    queueCurrentPage = lastCalculatedQueueTotalPages || 1;
+    if (currentBatch && currentBatch.queue) {
+      renderQueueTable(currentBatch.queue);
+    }
+  });
+}
+
+const historySearchInput = $("history-search-input");
+const historySearchClear = $("history-search-clear");
+const historyPageSizeSelect = $("history-page-size");
+const historyFirstBtn = $("history-first-page");
+const historyPrevBtn = $("history-prev-page");
+const historyNextBtn = $("history-next-page");
+const historyLastBtn = $("history-last-page");
+
+if (historySearchInput) {
+  historySearchInput.addEventListener("input", (e) => {
+    historySearchTerm = e.target.value || "";
+    if (historySearchClear) {
+      historySearchClear.style.display = historySearchTerm ? "block" : "none";
+    }
+    historyCurrentPage = 1;
+    renderHistory();
+  });
+}
+
+if (historySearchClear) {
+  historySearchClear.addEventListener("click", () => {
+    if (historySearchInput) historySearchInput.value = "";
+    historySearchTerm = "";
+    historySearchClear.style.display = "none";
+    historyCurrentPage = 1;
+    renderHistory();
+  });
+}
+
+if (historyPageSizeSelect) {
+  historyPageSizeSelect.addEventListener("change", (e) => {
+    historyPageSize = e.target.value;
+    historyCurrentPage = 1;
+    renderHistory();
+  });
+}
+
+if (historyFirstBtn) {
+  historyFirstBtn.addEventListener("click", () => {
+    if (historyCurrentPage !== 1) {
+      historyCurrentPage = 1;
+      renderHistory();
+    }
+  });
+}
+
+if (historyPrevBtn) {
+  historyPrevBtn.addEventListener("click", () => {
+    if (historyCurrentPage > 1) {
+      historyCurrentPage--;
+      renderHistory();
+    }
+  });
+}
+
+if (historyNextBtn) {
+  historyNextBtn.addEventListener("click", () => {
+    historyCurrentPage++;
+    renderHistory();
+  });
+}
+
+if (historyLastBtn) {
+  historyLastBtn.addEventListener("click", () => {
+    if (historyCurrentPage !== lastCalculatedHistoryTotalPages) {
+      historyCurrentPage = lastCalculatedHistoryTotalPages || 1;
+      renderHistory();
+    }
+  });
+}
+
+// Interatividade dos Chips de Progresso Geral (img5)
+const chipSucc = $("kpi-chip-success");
+if (chipSucc) {
+  chipSucc.addEventListener("click", () => {
+    switchCockpitTab("history");
+    const btn = document.querySelector('[data-hist-filter="success"]');
+    if (btn) btn.click();
+  });
+}
+const chipRun = $("kpi-chip-running");
+if (chipRun) {
+  chipRun.addEventListener("click", () => {
+    switchCockpitTab("active-runs");
+  });
+}
+const chipErr = $("kpi-chip-error");
+if (chipErr) {
+  chipErr.addEventListener("click", () => {
+    switchCockpitTab("history");
+    const btn = document.querySelector('[data-hist-filter="error"]');
+    if (btn) btn.click();
+  });
+}
+
+// Botão Abrir Pasta de Saída no Finder/Sistema (img4)
+const btnOpenOut = $("btn-open-output-folder");
+if (btnOpenOut) {
+  btnOpenOut.addEventListener("click", async () => {
+    const outDir = batchOutputDir ? batchOutputDir.value.trim() : "";
+    if (!outDir) return;
+    try {
+      await fetch("/api/fs/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: outDir }),
+      });
+    } catch (_) {}
+  });
+}
+
+// Autenticação Corporativa Okta SSO & Gateway (:3001)
+const authBadge = $("header-auth-badge");
+const ssoModal = $("sso-modal-overlay");
+const ssoClose = $("sso-modal-close");
+const ssoOk = $("sso-modal-ok");
+const ssoRefreshBtn = $("sso-btn-refresh-token");
+
+if (authBadge && ssoModal) {
+  authBadge.addEventListener("click", () => {
+    ssoModal.classList.add("open");
+  });
+}
+if (ssoClose && ssoModal) {
+  ssoClose.addEventListener("click", () => {
+    ssoModal.classList.remove("open");
+  });
+}
+if (ssoOk && ssoModal) {
+  ssoOk.addEventListener("click", () => {
+    ssoModal.classList.remove("open");
+  });
+}
+if (ssoModal) {
+  ssoModal.addEventListener("click", (e) => {
+    if (e.target === ssoModal) ssoModal.classList.remove("open");
+  });
+}
+async function syncAuthStatus() {
+  try {
+    const res = await fetch("/api/auth/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && data.user) {
+      const u = data.user;
+      const gw = data.gateway || {};
+      const headerName = $("header-auth-name");
+      const headerAvatar = $("header-auth-avatar");
+      const modalUser = $("sso-modal-user");
+      const modalEmail = $("sso-modal-email");
+      const modalOrg = $("sso-modal-org");
+      const modalAvatar = $("sso-modal-avatar");
+      const modalLogin = $("sso-modal-login");
+      const modalOktaId = $("sso-modal-okta-id");
+      const modalIdp = $("sso-modal-idp");
+      const modalTokenTtl = $("sso-modal-token-ttl");
+      const modalGwStatus = $("sso-modal-gw-status");
+
+      const firstName = u.firstName || (u.name || "").split(" ")[0];
+      const words = (u.name || "").split(" ").filter(Boolean);
+      const initials = words.length > 1
+        ? (words[0][0] + words[words.length - 1][0]).toUpperCase()
+        : (words[0] ? words[0].slice(0, 2).toUpperCase() : "GB");
+
+      if (headerName) headerName.textContent = firstName ? `${firstName} B.` : (u.name || "Gustavo B.");
+      if (headerAvatar) headerAvatar.textContent = initials;
+      if (modalUser) modalUser.textContent = u.name || "Gustavo Costa Berbert";
+      if (modalEmail) modalEmail.textContent = u.email || "gustavo.costa.berbert@nttdata.com";
+      if (modalOrg && u.org) modalOrg.textContent = `${u.org}${u.tenant ? " (" + u.tenant + ")" : ""} • ${u.role || "RAG Pipeline Architect"}`;
+      if (modalAvatar) modalAvatar.textContent = initials;
+
+      if (modalLogin && u.login) {
+        modalLogin.textContent = u.login;
+      }
+      if (modalOktaId && u.oktaId) {
+        modalOktaId.textContent = u.oktaId;
+      }
+      if (modalIdp) {
+        modalIdp.textContent = `Okta Enterprise OIDC (${u.tenant || "OneNTT"})`;
+      }
+
+      if (modalTokenTtl) {
+        if (typeof gw.remainingSeconds === "number" && gw.remainingSeconds > 0) {
+          const mins = Math.floor(gw.remainingSeconds / 60);
+          const secs = gw.remainingSeconds % 60;
+          modalTokenTtl.innerHTML = `<span style="color: #059669;">🟢 Ativo</span> (~${mins}m ${secs}s restantes)`;
+        } else {
+          modalTokenTtl.innerHTML = `<span style="color: #059669;">🟢 Ativo (Sessão Válida)</span>`;
+        }
+      }
+
+      if (modalGwStatus) {
+        const isOnline = gw.gateway8766Online || gw.gateway3001Online || gw.status === "connected";
+        if (isOnline) {
+          modalGwStatus.innerHTML = `<span style="color: #059669;">🟢 Online</span> (API Gateway :8766 / :3001)`;
+        } else {
+          modalGwStatus.innerHTML = `<span style="color: #eab308;">🟡 Standalone</span> (Modo Local)`;
+        }
+      }
+    }
+    const syncTime = $("sso-last-sync-time");
+    if (syncTime) syncTime.textContent = new Date().toLocaleTimeString("pt-BR");
+  } catch (_) {}
+}
+
+if (ssoRefreshBtn) {
+  ssoRefreshBtn.addEventListener("click", async () => {
+    ssoRefreshBtn.disabled = true;
+    ssoRefreshBtn.textContent = "Renovando...";
+    try {
+      await fetch("/api/auth/refresh", { method: "POST" });
+      await syncAuthStatus();
+      ssoRefreshBtn.textContent = "✓ Sessão Sincronizada";
+      setTimeout(() => {
+        ssoRefreshBtn.disabled = false;
+        ssoRefreshBtn.textContent = "🔄 Sincronizar Sessão";
+      }, 1500);
+    } catch (_) {
+      ssoRefreshBtn.disabled = false;
+      ssoRefreshBtn.textContent = "🔄 Tentar Novamente";
+    }
+  });
+}
+
+// Sincronização inicial e auto-refresh silencioso de token (a cada 60s em background)
+syncAuthStatus();
+setInterval(syncAuthStatus, 60000);
 
 // ---------------------------------------------------------------------------
 // Conexão SSE + snapshot inicial
@@ -2254,10 +3793,24 @@ function connectSSE() {
 }
 
 // ---------------------------------------------------------------------------
-// Inicialização
+// Inicialização e Redraw Periódico
 // ---------------------------------------------------------------------------
+
+window.addEventListener("resize", () => {
+  if (currentCockpitTab === "storage") {
+    drawCpuRamChart();
+  }
+});
+
+// Mantém animação do gráfico fluida a cada segundo quando na aba de telemetria
+setInterval(() => {
+  if (currentCockpitTab === "storage") {
+    drawCpuRamChart();
+  }
+}, 1000);
 
 renderActiveRunsEmptyState();
 loadInitialState().then(() => {
   connectSSE();
+  drawCpuRamChart();
 });

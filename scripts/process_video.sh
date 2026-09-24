@@ -77,6 +77,9 @@ mkdir -p "$VIDEO_OUTPUT_DIR"
 mkdir -p "$VIDEO_OUTPUT_DIR/logs"
 
 AXET_MODEL_LABEL="${AXET_MODEL:-gpt-5.6-terra}"
+VIDEO_VISION_MODE="${VIDEO_VISION_MODE:-vision_ocr}"
+LLM_GATEWAY_URL="${LLM_GATEWAY_URL:-http://localhost:8766}"
+PROMPT_MULTIMODAL="${PROMPT_MULTIMODAL:-$ROOT_DIR/prompts/analise_video_multimodal.md}"
 
 # ---------------------------------------------------------------------------
 # Telemetria: helpers
@@ -95,6 +98,7 @@ RUN_ID="run_${TIMESTAMP}_$$"
 # e limpos imediatamente, mantendo o OneDrive 100% intocado.
 # ---------------------------------------------------------------------------
 TEMP_WORKSPACE="/tmp/axet-workspace/${RUN_ID}"
+FRAMES_DIR="$TEMP_WORKSPACE/frames"
 mkdir -p "$TEMP_WORKSPACE"
 
 # Salvaguarda de Segurança Absoluta contra deleção acidental no OneDrive
@@ -140,7 +144,7 @@ emit_telemetry() {
 
 emit_run_start() {
   emit_telemetry "$(cat <<EOF
-{"type":"run_start","run_id":"$RUN_ID","ts":"$(now_iso)","video":"$BASENAME","whisper_model":"$WHISPER_MODEL","axet_model":"$AXET_MODEL_LABEL"}
+{"type":"run_start","run_id":"$RUN_ID","ts":"$(now_iso)","video":"$BASENAME","whisper_model":"$WHISPER_MODEL","axet_model":"$AXET_MODEL_LABEL","vision_mode":"$VIDEO_VISION_MODE"}
 EOF
 )"
 }
@@ -295,6 +299,7 @@ echo "=============================================================="
 echo "Vídeo de entrada : $VIDEO_PATH"
 echo "Modelo Whisper   : $WHISPER_MODEL"
 echo "Idioma           : $LANGUAGE"
+echo "Modo de Visão    : $VIDEO_VISION_MODE"
 echo "Saída            : $VIDEO_OUTPUT_DIR"
 echo "Run ID           : $RUN_ID"
 echo "=============================================================="
@@ -369,9 +374,26 @@ if ! ffmpeg -y -nostdin -i "$EFFECTIVE_VIDEO_PATH" -vn -acodec pcm_s16le -ar 160
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Extração de Frames para OCR & Visão Multimodal (se habilitado)
+# ---------------------------------------------------------------------------
+if [[ "$VIDEO_VISION_MODE" == "vision_ocr" ]]; then
+  echo "      -> Extraindo frames de tela para OCR e Visão Multimodal..."
+  emit_log "INFO" "extracao_audio" "Iniciando amostragem de frames do vídeo para análise visual..."
+  mkdir -p "$FRAMES_DIR"
+  FRAMES_LOG="$TEMP_WORKSPACE/frames_extraction.log"
+  if python3 "$ROOT_DIR/scripts/extract_video_frames.py" "$EFFECTIVE_VIDEO_PATH" "$FRAMES_DIR" >"$FRAMES_LOG" 2>&1; then
+    FRAME_COUNT="$(grep -oE '"count": *[0-9]+' "$FRAMES_LOG" | awk '{print $2}' || echo 0)"
+    emit_log "INFO" "extracao_audio" "Frames visuais extraídos: ${FRAME_COUNT:-0} frames capturados para OCR e Visão Multimodal."
+    echo "      -> Frames visuais capturados: ${FRAME_COUNT:-0} frames em $FRAMES_DIR"
+  else
+    emit_log "WARN" "extracao_audio" "Aviso: falha na extração de frames visuais. O pipeline continuará com o áudio."
+  fi
+fi
+
 # OTIMIZAÇÃO CRÍTICA DE ARMAZENAMENTO:
 # Se o vídeo foi processado a partir de área temporária /tmp, remove-o IMEDIATAMENTE
-# após a extração do áudio pelo ffmpeg, reduzindo a pegada em disco de dezenas de GB para centenas de MB.
+# após a extração do áudio e dos frames pelo ffmpeg, reduzindo a pegada em disco de dezenas de GB para centenas de MB.
 if [[ "$IS_TMP_VIDEO" == true && -f "$EFFECTIVE_VIDEO_PATH" ]]; then
   if assert_safe_path_for_deletion "$EFFECTIVE_VIDEO_PATH"; then
     rm -f "$EFFECTIVE_VIDEO_PATH"
@@ -545,20 +567,50 @@ CURRENT_STEP=""
 emit_step_end "transcricao_whisper" "success" "$STEP2_DUR" "Transcrição: $(basename "$TRANSCRIPT_TXT")"
 
 # ---------------------------------------------------------------------------
-# 3. Interpretação/Análise Avançada via axet-code (anti-alucinação)
+# 3. Interpretação/Análise Avançada via Visão Multimodal ou axet-code
 # ---------------------------------------------------------------------------
 STEP3_START=$(date +%s)
 echo
-echo "[3/4] Interpretando a transcrição com axet-code (modelo: $AXET_MODEL_LABEL)..."
 CURRENT_STEP="interpretacao_axet"
 emit_step_start "interpretacao_axet"
-emit_log "INFO" "interpretacao_axet" "Iniciando análise avançada com axet-code (modelo: $AXET_MODEL_LABEL)."
 
-PROMPT_FILE="$(mktemp -t axet_prompt_XXXXXX.txt)"
+MULTIMODAL_SUCCESS=false
 
-if [[ -f "$PROMPT_TEMPLATE" ]]; then
-  emit_log "INFO" "interpretacao_axet" "Montando prompt avançado com template: $(basename "$PROMPT_TEMPLATE")."
-  python3 - "$PROMPT_TEMPLATE" "$TRANSCRIPT_TXT" "$PROMPT_FILE" <<'PYEOF'
+# Verifica se o modo multimodal está ativo e se há frames extraídos
+if [[ "$VIDEO_VISION_MODE" == "vision_ocr" && -d "$FRAMES_DIR" && $(ls -1 "$FRAMES_DIR"/*.jpg 2>/dev/null | wc -l) -gt 0 ]]; then
+  echo "[3/4] Interpretando fala e telas com Visão Multimodal (modelo: $AXET_MODEL_LABEL)..."
+  emit_log "INFO" "interpretacao_axet" "Iniciando análise multimodal (Whisper + OCR de Telas via LLM Gateway)..."
+
+  MULTIMODAL_SCRIPT="$ROOT_DIR/scripts/analyze_video_multimodal.py"
+  MULTIMODAL_OUT="$TEMP_WORKSPACE/multimodal_output.md"
+  MULTIMODAL_ERR="$TEMP_WORKSPACE/multimodal_error.log"
+
+  if LLM_GATEWAY_URL="$LLM_GATEWAY_URL" python3 "$MULTIMODAL_SCRIPT" \
+      "$TRANSCRIPT_TXT" \
+      "$FRAMES_DIR" \
+      "$PROMPT_MULTIMODAL" \
+      "$MULTIMODAL_OUT" \
+      "$AXET_MODEL_LABEL" 2>"$MULTIMODAL_ERR"; then
+    if [[ -s "$MULTIMODAL_OUT" && $(wc -c < "$MULTIMODAL_OUT") -gt 150 ]]; then
+      AXET_OUTPUT="$(cat "$MULTIMODAL_OUT")"
+      MULTIMODAL_SUCCESS=true
+      emit_log "INFO" "interpretacao_axet" "Análise multimodal e OCR concluídos com sucesso via LLM Gateway."
+    fi
+  else
+    MM_ERR_TEXT="$(head -n 5 "$MULTIMODAL_ERR" 2>/dev/null | tr '\n' ' ')"
+    emit_log "WARN" "interpretacao_axet" "Falha na análise multimodal ($MM_ERR_TEXT). Acionando fallback tradicional de áudio..."
+  fi
+fi
+
+if [[ "$MULTIMODAL_SUCCESS" != true ]]; then
+  echo "[3/4] Interpretando a transcrição com axet-code (modelo: $AXET_MODEL_LABEL)..."
+  emit_log "INFO" "interpretacao_axet" "Iniciando análise com axet-code (modelo: $AXET_MODEL_LABEL)."
+
+  PROMPT_FILE="$(mktemp -t axet_prompt_XXXXXX.txt)"
+
+  if [[ -f "$PROMPT_TEMPLATE" ]]; then
+    emit_log "INFO" "interpretacao_axet" "Montando prompt avançado com template: $(basename "$PROMPT_TEMPLATE")."
+    python3 - "$PROMPT_TEMPLATE" "$TRANSCRIPT_TXT" "$PROMPT_FILE" <<'PYEOF'
 import sys
 
 template_path, transcript_path, out_path = sys.argv[1:4]
@@ -577,10 +629,10 @@ else:
 with open(out_path, "w", encoding="utf-8") as f:
     f.write(final_prompt)
 PYEOF
-else
-  emit_log "WARN" "interpretacao_axet" "Template de prompt não encontrado em $PROMPT_TEMPLATE. Usando template básico."
-  TRANSCRIPT_CONTENT="$(cat "$TRANSCRIPT_TXT")"
-  cat > "$PROMPT_FILE" <<PROMPT_EOF
+  else
+    emit_log "WARN" "interpretacao_axet" "Template de prompt não encontrado em $PROMPT_TEMPLATE. Usando template básico."
+    TRANSCRIPT_CONTENT="$(cat "$TRANSCRIPT_TXT")"
+    cat > "$PROMPT_FILE" <<PROMPT_EOF
 Você é um especialista sênior em análise de transcrições, documentação funcional, arquitetura de sistemas e processos de negócio.
 Sua tarefa é analisar profundamente a transcrição e produzir um documento estruturado completo sem alucinações.
 
@@ -588,39 +640,40 @@ Sua tarefa é analisar profundamente a transcrição e produzir um documento est
 TRANSCRIÇÃO ORIGINAL:
 $TRANSCRIPT_CONTENT
 PROMPT_EOF
-fi
-
-PROMPT_SIZE=$(wc -c < "$PROMPT_FILE" | tr -d ' ')
-emit_log "INFO" "interpretacao_axet" "Enviando prompt (${PROMPT_SIZE} bytes) para axet-code (modelo: $AXET_MODEL_LABEL)..."
-
-AXET_CMD=(axet-code run --quiet)
-if [[ -n "${AXET_MODEL:-}" && "$AXET_MODEL" != "default" && "$AXET_MODEL" != "auto" ]]; then
-  AXET_CMD+=(-m "$AXET_MODEL")
-fi
-
-AXET_ERR_FILE="$(mktemp -t axet_err_XXXXXX.txt)"
-if ! AXET_OUTPUT="$(cat "$PROMPT_FILE" | "${AXET_CMD[@]}" 2>"$AXET_ERR_FILE")"; then
-  echo "Erro: axet-code encerrou com falha." >&2
-  if [[ -f "$AXET_ERR_FILE" ]]; then
-    tail -n 20 "$AXET_ERR_FILE" >&2 || true
   fi
-  emit_log "ERROR" "interpretacao_axet" "Falha na chamada ao axet-code (modelo: $AXET_MODEL_LABEL)."
-  emit_step_end "interpretacao_axet" "error" 0 "axet-code falhou."
-  rm -f "$PROMPT_FILE" "$AXET_ERR_FILE"
-  exit 1
-fi
-rm -f "$PROMPT_FILE" "$AXET_ERR_FILE"
 
-if [[ -z "$AXET_OUTPUT" ]]; then
-  echo "Erro: axet-code não retornou conteúdo." >&2
-  emit_log "ERROR" "interpretacao_axet" "axet-code não retornou conteúdo."
-  emit_step_end "interpretacao_axet" "error" 0 "axet-code sem retorno."
-  exit 1
+  PROMPT_SIZE=$(wc -c < "$PROMPT_FILE" | tr -d ' ')
+  emit_log "INFO" "interpretacao_axet" "Enviando prompt (${PROMPT_SIZE} bytes) para axet-code (modelo: $AXET_MODEL_LABEL)..."
+
+  AXET_CMD=(axet-code run --quiet)
+  if [[ -n "${AXET_MODEL:-}" && "$AXET_MODEL" != "default" && "$AXET_MODEL" != "auto" ]]; then
+    AXET_CMD+=(-m "$AXET_MODEL")
+  fi
+
+  AXET_ERR_FILE="$(mktemp -t axet_err_XXXXXX.txt)"
+  if ! AXET_OUTPUT="$(cat "$PROMPT_FILE" | "${AXET_CMD[@]}" 2>"$AXET_ERR_FILE")"; then
+    echo "Erro: axet-code encerrou com falha." >&2
+    if [[ -f "$AXET_ERR_FILE" ]]; then
+      tail -n 20 "$AXET_ERR_FILE" >&2 || true
+    fi
+    emit_log "ERROR" "interpretacao_axet" "Falha na chamada ao axet-code (modelo: $AXET_MODEL_LABEL)."
+    emit_step_end "interpretacao_axet" "error" 0 "axet-code falhou."
+    rm -f "$PROMPT_FILE" "$AXET_ERR_FILE"
+    exit 1
+  fi
+  rm -f "$PROMPT_FILE" "$AXET_ERR_FILE"
+
+  if [[ -z "$AXET_OUTPUT" ]]; then
+    echo "Erro: axet-code não retornou conteúdo." >&2
+    emit_log "ERROR" "interpretacao_axet" "axet-code não retornou conteúdo."
+    emit_step_end "interpretacao_axet" "error" 0 "axet-code sem retorno."
+    exit 1
+  fi
 fi
 
 STEP3_DUR=$(( $(date +%s) - STEP3_START ))
-echo "      -> Análise avançada gerada pelo axet-code (${STEP3_DUR}s)."
-emit_log "INFO" "interpretacao_axet" "Análise avançada gerada com sucesso pelo axet-code."
+echo "      -> Análise avançada gerada (${STEP3_DUR}s)."
+emit_log "INFO" "interpretacao_axet" "Análise avançada gerada com sucesso."
 CURRENT_STEP=""
 emit_step_end "interpretacao_axet" "success" "$STEP3_DUR" "Análise avançada concluída."
 
@@ -644,8 +697,15 @@ emit_log "INFO" "geracao_markdown" "Montando relatório final em Markdown."
   else
     echo "**Modelo de transcrição:** Whisper Python ($WHISPER_MODEL) — idioma: ${LANGUAGE:-auto}"
   fi
-  echo "**Modelo de interpretação IA:** axet-code ($AXET_MODEL_LABEL)"
-  echo "**Prompt utilizado:** análise sênior avançada (documentação funcional, arquitetura, negócio, riscos, Q&A, anti-alucinação)"
+  if [[ "$MULTIMODAL_SUCCESS" == true ]]; then
+    echo "**Modo de Análise:** Com OCR + Visão Multimodal (Frames de Tela + Áudio)"
+    echo "**Modelo de Visão/IA:** LLM Gateway ($AXET_MODEL_LABEL)"
+    echo "**Prompt utilizado:** análise multimodal avançada (documentação funcional, OCR de telas, formulários, tabelas, arquitetura)"
+  else
+    echo "**Modo de Análise:** Sem OCR (Apenas Áudio + LLM Tradicional)"
+    echo "**Modelo de interpretação IA:** axet-code ($AXET_MODEL_LABEL)"
+    echo "**Prompt utilizado:** análise sênior avançada (documentação funcional, arquitetura, negócio, riscos, Q&A, anti-alucinação)"
+  fi
   echo
   echo "---"
   echo

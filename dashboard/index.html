@@ -1,414 +1,1118 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AXET Cockpit — Telemetria em Tempo Real</title>
-<link rel="stylesheet" href="/style.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NTT DATA — RAG Local Reef (Cockpit Multimodal)</title>
+  <link rel="icon" type="image/png" href="/logos/favicon-64.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
-  <div class="cockpit">
+<body class="ntt-theme light-mode">
+  <div class="cockpit-app">
 
-    <header class="cockpit-header">
-      <div class="brand">
-        <span class="brand-dot" id="conn-dot"></span>
-        <h1>AXET Multimodal Pipeline <span class="accent">// Cockpit</span></h1>
-      </div>
-
-      <!-- Velocímetros de Telemetria do Sistema (CPU e RAM em Tempo Real) -->
-      <div class="system-gauges-cluster" id="system-gauges-cluster" title="Telemetria de Hardware em Tempo Real">
-        <!-- Velocímetro CPU -->
-        <div class="gauge-card" id="gauge-cpu-card">
-          <div class="gauge-svg-wrap">
-            <svg class="gauge-svg" viewBox="0 0 110 65">
-              <path class="gauge-track" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" />
-              <path class="gauge-fill gauge-fill-cpu" id="gauge-cpu-fill" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="125.66" />
-              <line class="gauge-needle" id="gauge-cpu-needle" x1="55" y1="55" x2="55" y2="20" stroke-linecap="round" />
-              <circle class="gauge-center-hub" cx="55" cy="55" r="3.5" />
-            </svg>
-          </div>
-          <div class="gauge-info">
-            <div class="gauge-head-row">
-              <span class="gauge-title">CPU LOAD</span>
-              <span class="gauge-val gauge-val-cpu" id="gauge-cpu-val">0%</span>
-            </div>
-            <span class="gauge-sub" id="gauge-cpu-sub">12 Cores</span>
-          </div>
+    <!-- CABEÇALHO CORPORATIVO NTT DATA (LIMPO E ELEGANTE) -->
+    <header class="ntt-header">
+      <div class="header-brand-wrap">
+        <div class="brand-logo-container">
+          <img src="/logos/ntt-symbol.png" alt="NTT Symbol" class="logo-symbol-img" />
+          <img src="/logos/ntt-data-logo.png" alt="NTT DATA" class="logo-text-img" />
         </div>
-
-        <!-- Velocímetro RAM -->
-        <div class="gauge-card" id="gauge-mem-card">
-          <div class="gauge-svg-wrap">
-            <svg class="gauge-svg" viewBox="0 0 110 65">
-              <path class="gauge-track" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" />
-              <path class="gauge-fill gauge-fill-mem" id="gauge-mem-fill" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="125.66" />
-              <line class="gauge-needle" id="gauge-mem-needle" x1="55" y1="55" x2="55" y2="20" stroke-linecap="round" />
-              <circle class="gauge-center-hub" cx="55" cy="55" r="3.5" />
-            </svg>
+        <div class="brand-titles">
+          <div class="title-with-status">
+            <h1 class="app-title">RAG LOCAL REEF</h1>
+            <span class="online-pill" id="conn-status-pill">
+              <span class="pulse-dot" id="conn-dot"></span>
+              <span id="conn-status">ONLINE</span>
+            </span>
           </div>
-          <div class="gauge-info">
-            <div class="gauge-head-row">
-              <span class="gauge-title">MEMÓRIA RAM</span>
-              <span class="gauge-val gauge-val-mem" id="gauge-mem-val">0%</span>
-            </div>
-            <span class="gauge-sub" id="gauge-mem-sub">0.0 / 0.0 GB</span>
-          </div>
+          <span class="app-subtitle">Cockpit Multimodal & Engenharia de Contexto para Agentes de IA</span>
         </div>
       </div>
 
-      <div class="conn-status" id="conn-status">conectando...</div>
-    </header>
-
-    <!-- Painel de Controle de Processamento em Lote (Batch & Varredura Recursiva) -->
-    <section class="batch-panel panel">
-      <div class="panel-header batch-header">
-        <div class="batch-title">
-          <span class="batch-icon">⚙️</span>
-          <span>Processamento Multimodal em Lote (Vídeos & Docs)</span>
-          <span class="batch-badge" id="batch-status-badge">Pronto</span>
-        </div>
-        <div class="batch-actions">
+      <!-- Ações Rápidas de Controle do Lote & SSO Corporativo -->
+      <div class="header-right-cluster">
+        <div class="header-batch-actions">
           <button id="batch-retry-errors-btn" class="btn btn-warning" style="display: none;" title="Reenfileirar todos os itens com falha">
             <span class="btn-icon">🔄</span> Reenfileirar Falhas
           </button>
-          <button id="batch-resume-btn" class="btn btn-resume" style="display: none;" title="Retomar lote de onde parou (processar apenas falhas e pendentes, pulando já concluídos)">
-            <span class="btn-icon">⏯</span> Retomar de Onde Parou
+          <button id="batch-resume-btn" class="btn btn-resume" style="display: none;" title="Retomar lote de onde parou">
+            <span class="btn-icon">⏯</span> Retomar
           </button>
-          <button id="batch-start-btn" class="btn btn-primary" title="Iniciar processamento de todos os vídeos encontrados">
-            <span class="btn-icon">▶</span> Iniciar Processamento
+          <button id="batch-start-btn" class="btn btn-primary" title="Iniciar processamento do lote">
+            <span class="btn-icon">▶</span> Iniciar Lote
           </button>
-          <button id="batch-stop-btn" class="btn btn-danger" disabled title="Interromper com segurança a fila e os processos ativos">
-            <span class="btn-icon">⏹</span> Interromper com Segurança
+          <button id="batch-stop-btn" class="btn btn-danger" disabled title="Interromper com segurança o lote">
+            <span class="btn-icon">⏹</span> Parar
+          </button>
+          <button id="btn-toggle-settings" class="btn btn-secondary" title="Ajustar parâmetros de configuração">
+            <span class="btn-icon">⚙️</span>
+            <span>Configuração</span>
           </button>
         </div>
-      </div>
 
-      <div class="batch-config-grid">
-        <!-- Diretório de Entrada -->
-        <div class="config-group config-dir">
-          <label for="batch-input-dir">
-            <strong>Diretório de Entrada (Raiz de Vídeos)</strong>
-            <span class="label-desc">Varre recursivamente todas as subpastas em busca de vídeos (.mp4, .mkv, .mov, etc.)</span>
-          </label>
-          <div class="dir-input-wrapper">
-            <input type="text" id="batch-input-dir" class="text-input" placeholder="/caminho/para/pasta/de/videos" spellcheck="false" />
-            <button id="btn-browse-input" class="btn btn-secondary" title="Selecionar pasta via navegador/sistema">
-              📂 Procurar Pasta...
-            </button>
-            <button id="btn-scan-videos" class="btn btn-ghost" title="Escanear e listar vídeos nesta pasta">
-              🔍 Escanear
-            </button>
-          </div>
-          <div class="dir-scan-info" id="scan-feedback">
-            <span id="scan-count-badge" class="scan-badge">Aguardando varredura...</span>
-          </div>
-        </div>
-
-        <!-- Diretório de Saída -->
-        <div class="config-group config-dir">
-          <label for="batch-output-dir">
-            <strong>Diretório de Saída (Resultados e Relatórios)</strong>
-            <span class="label-desc">Local onde serão salvos as transcrições (.txt), áudio (.wav) e relatórios (.md)</span>
-          </label>
-          <div class="dir-input-wrapper">
-            <input type="text" id="batch-output-dir" class="text-input" placeholder="/caminho/para/pasta/de/saida" spellcheck="false" />
-            <button id="btn-browse-output" class="btn btn-secondary" title="Selecionar pasta via navegador/sistema">
-              📂 Procurar Pasta...
-            </button>
-          </div>
-        </div>
-
-        <!-- Configurações de Execução: Paralelismo e Modelo -->
-                <div class="config-row-params">
-          <div class="config-group config-param config-mode-selector">
-            <label>
-              <strong>Modo de Ingestão</strong>
-              <span class="label-desc">Mídias incluídas na jornada</span>
-            </label>
-            <div class="mode-toggle-group" id="ingestion-mode-group">
-              <button type="button" class="btn-mode active" data-mode="all" title="Processar vídeos e documentos (.pdf, .docx, .html, .pptx, .xlsx, etc.) em lote único">
-                <span class="mode-icon">🚀</span> Ambos
-              </button>
-              <button type="button" class="btn-mode" data-mode="videos" title="Processar somente vídeos (.mp4, .mkv, .mov, etc.)">
-                <span class="mode-icon">🎬</span> Vídeos
-              </button>
-              <button type="button" class="btn-mode" data-mode="documents" title="Processar somente documentos (.pdf, .docx, .html, .pptx, .xlsx, .csv, .txt, etc.)">
-                <span class="mode-icon">📄</span> Docs
-              </button>
-            </div>
-          </div>
-          <div class="config-group config-param">
-            <label for="batch-parallelism">
-              <strong>Paralelismo (Concorrência)</strong>
-              <span class="label-desc">Número de vídeos processados simultaneamente</span>
-            </label>
-            <div class="stepper-wrapper">
-              <button id="btn-dec-par" class="btn-stepper" type="button">−</button>
-              <input type="number" id="batch-parallelism" class="number-input" min="1" max="8" value="2" />
-              <button id="btn-inc-par" class="btn-stepper" type="button">+</button>
-              <span class="param-hint" id="parallelism-hint">2 execuções simultâneas (recomendado)</span>
-            </div>
-          </div>
-
-          <div class="config-group config-param">
-            <label for="batch-whisper-model">
-              <strong>Modelo Whisper</strong>
-              <span class="label-desc">Equilíbrio entre velocidade e precisão</span>
-            </label>
-            <select id="batch-whisper-model" class="select-input">
-              <option value="tiny">tiny (ultrarrápido, menor acurácia)</option>
-              <option value="base">base (rápido)</option>
-              <option value="small" selected>small (recomendado / padrão)</option>
-              <option value="medium">medium (mais preciso, mais pesado)</option>
-              <option value="large">large (máxima fidelidade, alto consumo de memória)</option>
-            </select>
-          </div>
-
-          <div class="config-group config-param">
-            <label for="batch-whisper-lang">
-              <strong>Idioma do Áudio</strong>
-              <span class="label-desc">Espanhol recomendado p/ REEF/Mapfre</span>
-            </label>
-            <select id="batch-whisper-lang" class="select-input">
-              <option value="es" selected>Espanhol (es) — Recomendado REEF/Mapfre</option>
-              <option value="pt">Português (pt)</option>
-              <option value="en">Inglês (en)</option>
-              <option value="auto">Auto-detectar (não recomendado se houver silêncio)</option>
-              <option value="fr">Francês (fr)</option>
-              <option value="it">Italiano (it)</option>
-            </select>
-          </div>
-
-          <div class="config-group config-param">
-            <label for="batch-axet-model">
-              <strong>Modelo IA (axet-code)</strong>
-              <span class="label-desc">Modelo para análise executiva .md</span>
-            </label>
-            <select id="batch-axet-model" class="select-input">
-              <option value="gpt-5.6-terra" selected>gpt-5.6-terra (recomendado)</option>
-              <option value="gpt-5.6-luna">gpt-5.6-luna</option>
-              <option value="gpt-5.4-2026-03-05">gpt-5.4-2026-03-05</option>
-              <option value="gpt-5.2">gpt-5.2</option>
-              <option value="gpt-5.1">gpt-5.1</option>
-              <option value="gpt-4.1">gpt-4.1</option>
-              <option value="gpt-4o">gpt-4o</option>
-              <option value="gpt-5-mini">gpt-5-mini (rápido)</option>
-              <option value="gpt-4o-mini">gpt-4o-mini</option>
-              <option value="eu.anthropic.claude-sonnet-5">claude-sonnet-5</option>
-              <option value="eu.anthropic.claude-sonnet-4-6">claude-sonnet-4-6</option>
-              <option value="eu.anthropic.claude-haiku-4-5-20251001-v1:0">claude-haiku-4-5</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Salvaguarda: Retomada Inteligente / Prevenção de Retrabalho -->
-        <div class="config-group config-toggle" style="grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; background: rgba(0, 224, 198, 0.06); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(0, 224, 198, 0.25);">
-          <input type="checkbox" id="batch-skip-completed" checked style="width: 20px; height: 20px; accent-color: #00b4a0; cursor: pointer;" />
-          <label for="batch-skip-completed" style="margin: 0; cursor: pointer; display: flex; flex-direction: column;">
-            <strong style="color: #e2e8f0; font-size: 13.5px; display: flex; align-items: center; gap: 6px;">
-              <span>🛡️</span> Pular vídeos já concluídos (Retomada Inteligente & Prevenção de Retrabalho)
-            </strong>
-            <span style="color: #94a3b8; font-size: 11.5px; margin-top: 2px;">Detecta automaticamente relatórios Markdown existentes em disco ou no manifesto (.agent/batch_manifest.json) e processa somente vídeos pendentes ou que falharam.</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Barra de Progresso e Métricas do Lote -->
-      <div class="batch-progress-section" id="batch-progress-section">
-        <div class="batch-progress-meta">
-          <span class="batch-progress-title" id="batch-progress-text">Progresso Geral do Lote: 0 de 0 vídeos concluídos (0%)</span>
-          <span class="batch-workers-active" id="batch-workers-text">0 workers ativos</span>
-        </div>
-        <div class="batch-progress-bar-bg">
-          <div class="batch-progress-bar-fill" id="batch-progress-fill" style="width: 0%;"></div>
-        </div>
-
-        <div class="batch-stats-counters">
-          <div class="stat-pill stat-total"><span class="stat-num" id="stat-total">0</span> Total</div>
-          <div class="stat-pill stat-media-videos"><span class="stat-num" id="stat-videos">0</span> 🎬 Vídeos</div>
-          <div class="stat-pill stat-media-docs"><span class="stat-num" id="stat-docs">0</span> 📄 Docs</div>
-          <div class="stat-pill stat-running"><span class="stat-num" id="stat-running">0</span> Em Execução</div>
-          <div class="stat-pill stat-completed"><span class="stat-num" id="stat-completed">0</span> Concluídos</div>
-          <div class="stat-pill stat-pending"><span class="stat-num" id="stat-pending">0</span> Pendentes</div>
-          <div class="stat-pill stat-errors"><span class="stat-num" id="stat-errors">0</span> Erros</div>
-          <div class="stat-pill stat-cancelled"><span class="stat-num" id="stat-cancelled">0</span> Cancelados</div>
-        </div>
-
-        <!-- Telemetria Dinâmica: Volume em MB, Taxa MB/s, s/MB, Média por Vídeo e ETA -->
-        <div class="batch-telemetry-grid" id="batch-telemetry-grid">
-          <div class="telemetry-card">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">📦</span>
-              <span class="telemetry-card-title">Volume de Dados</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-volume">0 MB / 0 MB</div>
-            <div class="telemetry-card-sub" id="metric-volume-sub">0% processado</div>
-          </div>
-
-          <div class="telemetry-card">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">⚡</span>
-              <span class="telemetry-card-title">Taxa de Vazão (MB/s)</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-speed">-- MB/s</div>
-            <div class="telemetry-card-sub" id="metric-sec-mb">-- s / MB</div>
-          </div>
-
-          <div class="telemetry-card">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">⏱️</span>
-              <span class="telemetry-card-title">Média por Vídeo</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-avg-video">--</div>
-            <div class="telemetry-card-sub" id="metric-avg-video-sub">Aguardando 1º vídeo</div>
-          </div>
-
-          <div class="telemetry-card telemetry-card-eta">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">⏳</span>
-              <span class="telemetry-card-title">Estimativa de Término (ETA)</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-eta">--</div>
-            <div class="telemetry-card-sub" id="metric-eta-time">Término previsto: --</div>
-          </div>
-        </div>
-
-        <!-- Telemetria de Armazenamento e Hidratação OneDrive (Entrada em GB, Mac SSD e /tmp) -->
-        <div class="storage-telemetry-grid" id="storage-telemetry-grid">
-          <div class="telemetry-card storage-card-onedrive">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">☁️</span>
-              <span class="telemetry-card-title">Hidratação OneDrive (Entrada)</span>
-              <span class="storage-status-badge" id="storage-onedrive-badge">On-Demand</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-onedrive-storage">0.00 GB / 0.00 GB</div>
-            <div class="storage-progress-wrapper">
-              <div class="storage-progress-bar" id="storage-hydration-bar" style="width: 0%;"></div>
-            </div>
-            <div class="telemetry-card-sub" id="metric-onedrive-sub">0 baixados • 0 na nuvem (online-only)</div>
-          </div>
-
-          <div class="telemetry-card storage-card-mac">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">💾</span>
-              <span class="telemetry-card-title">Espaço Livre SSD Mac</span>
-              <span class="storage-status-badge badge-safe" id="storage-mac-badge">Seguro (>20GB)</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-mac-free">-- GB Livres</div>
-            <div class="telemetry-card-sub" id="metric-mac-sub">Salvaguarda mínima: 20 GB</div>
-          </div>
-
-          <div class="telemetry-card storage-card-tmp">
-            <div class="telemetry-card-header">
-              <span class="telemetry-card-icon">🛡️</span>
-              <span class="telemetry-card-title">Área Temporária (/tmp)</span>
-              <span class="storage-status-badge badge-clean" id="storage-tmp-badge">Otimizado</span>
-            </div>
-            <div class="telemetry-card-main" id="metric-tmp-size">0.0 MB</div>
-            <div class="telemetry-card-sub" id="metric-tmp-sub">Vídeo .tmp deletado pós-áudio • OneDrive intacto</div>
+        <!-- Indicador de Sessão Okta SSO & Gateway -->
+        <div class="header-auth-badge" id="header-auth-badge" title="Sessão Okta SSO (NTT DATA) via API Gateway :3001. Clique para ver detalhes.">
+          <div class="auth-user-avatar" id="header-auth-avatar">GB</div>
+          <div class="auth-user-info">
+            <span class="auth-user-name" id="header-auth-name">Gustavo B.</span>
+            <span class="auth-sso-status"><span class="auth-sso-dot"></span> Okta SSO :3001</span>
           </div>
         </div>
       </div>
+    </header>
 
-      <!-- Fila de Vídeos Descobertos / Em Andamento -->
-      <details class="batch-queue-details" id="batch-queue-details" open>
-        <summary class="queue-summary">
-          <span>Fila de Vídeos Encontrados na Varredura</span>
-          <span class="queue-count-badge" id="queue-summary-count">0 vídeos</span>
-        </summary>
-        <div class="queue-table-wrapper">
-          <table class="queue-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Vídeo (Caminho Relativo na Árvore)</th>
-                <th>Tamanho / Nuvem</th>
-                <th>Etapa do Pipeline</th>
-                <th>Status</th>
-                <th>Duração</th>
-                <th>Run / Relatório</th>
-              </tr>
-            </thead>
-            <tbody id="queue-table-body">
-              <tr class="queue-empty-row">
-                <td colspan="7">Nenhum vídeo carregado. Selecione a pasta e clique em "Escanear".</td>
-              </tr>
-            </tbody>
-          </table>
+    <!-- RÉGUA EXECUTIVA DE 5 KPIS (ALTO IMPACTO E EQUILIBRADA) -->
+    <section class="kpi-metrics-strip">
+      <!-- KPI 1: Total de Arquivos -->
+      <div class="kpi-card" id="kpi-total-card">
+        <div class="kpi-header">
+          <span class="kpi-title">TOTAL DO LOTE</span>
+          <span class="kpi-icon">📁</span>
         </div>
-      </details>
+        <div class="kpi-value-row">
+          <span class="kpi-num" id="stat-total">0</span>
+          <span class="kpi-unit">itens</span>
+        </div>
+        <div class="kpi-sub" id="kpi-sub-types">
+          <span id="stat-docs">0</span> Docs • <span id="stat-videos">0</span> Vídeos
+        </div>
+      </div>
+
+      <!-- KPI 2: Progresso do Lote (Multissegmentado Interativo) -->
+      <div class="kpi-card kpi-card-progress" id="kpi-progress-card">
+        <div class="kpi-header">
+          <span class="kpi-title">PROGRESSO GERAL</span>
+          <span class="kpi-pct-badge" id="kpi-pct-badge">0%</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-segmented-progress-track" id="kpi-segmented-track" title="Progresso Geral do Lote">
+            <div class="kpi-seg seg-success" id="batch-progress-seg-success" style="width: 0%;" title="Concluídos"></div>
+            <div class="kpi-seg seg-running" id="batch-progress-seg-running" style="width: 0%;" title="Em Execução"></div>
+            <div class="kpi-seg seg-error" id="batch-progress-seg-error" style="width: 0%;" title="Com Erro"></div>
+          </div>
+          <!-- Elemento oculto para manter retrocompatibilidade -->
+          <div id="batch-progress-fill" style="display: none;"></div>
+        </div>
+        <div class="kpi-sub">
+          <span id="batch-progress-text">0 de 0 concluídos</span>
+          <span class="kpi-active-badge" id="batch-workers-text" style="display: none;">0 ativos</span>
+        </div>
+        <div class="kpi-interactive-legend">
+          <span class="kpi-chip kpi-chip-success" id="kpi-chip-success" title="Filtrar concluídos com sucesso no histórico">
+            <span class="chip-dot dot-success"></span><span id="kpi-count-success">0</span> concl.
+          </span>
+          <span class="kpi-chip kpi-chip-running" id="kpi-chip-running" title="Ver execuções ativas em processamento">
+            <span class="chip-dot dot-running"></span><span id="kpi-count-running">0</span> ativ.
+          </span>
+          <span class="kpi-chip kpi-chip-error" id="kpi-chip-error" title="Filtrar itens com falha no histórico">
+            <span class="chip-dot dot-error"></span><span id="kpi-count-error">0</span> erros
+          </span>
+        </div>
+      </div>
+
+      <!-- KPI 3: Vazão e Velocidade -->
+      <div class="kpi-card" id="kpi-speed-card">
+        <div class="kpi-header">
+          <span class="kpi-title">VAZÃO & VELOCIDADE</span>
+          <span class="kpi-icon">⚡</span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-num" id="metric-speed">-- MB/s</span>
+        </div>
+        <div class="kpi-sub">
+          <span id="metric-volume">0 MB</span> • <span id="metric-avg-video">--</span>
+          <span id="metric-sec-mb" style="display: none;">--</span>
+          <span id="metric-volume-sub" style="display: none;">--</span>
+          <span id="metric-avg-video-sub" style="display: none;">--</span>
+        </div>
+      </div>
+
+      <!-- KPI 4: Status do Pipeline & ETA -->
+      <div class="kpi-card" id="kpi-status-card">
+        <div class="kpi-header">
+          <span class="kpi-title">STATUS DO LOTE</span>
+          <span class="kpi-icon">⏳</span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-num kpi-status-val" id="metric-eta">Aguardando</span>
+        </div>
+        <div class="kpi-sub" id="metric-eta-time">
+          Pronto para iniciar
+        </div>
+      </div>
+
+      <!-- KPI 5: Armazenamento & SSD Mac -->
+      <div class="kpi-card" id="kpi-storage-card">
+        <div class="kpi-header">
+          <span class="kpi-title">SSD MAC & STORAGE</span>
+          <span class="kpi-badge-storage" id="storage-mac-badge">Seguro</span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-num" id="metric-mac-free">-- GB</span>
+          <span class="kpi-unit">livres</span>
+        </div>
+        <div class="kpi-sub" id="metric-mac-sub">
+          Salvaguarda > 3 GB • OneDrive intacto
+        </div>
+      </div>
+
+      <!-- Elementos ocultos para sincronização e telemetria -->
+      <div style="display: none;">
+        <span id="stat-running">0</span>
+        <span id="stat-completed">0</span>
+        <span id="stat-pending">0</span>
+        <span id="stat-errors">0</span>
+        <span id="stat-cancelled">0</span>
+        <div id="scan-feedback"></div>
+        <span id="settings-summary-mode"></span>
+        <span id="summary-val-input"></span>
+        <span id="summary-val-output"></span>
+        <span id="summary-val-workers"></span>
+        <span id="summary-val-model"></span>
+        <button id="btn-scan-quick" type="button"></button>
+        <div id="settings-expanded-panel"></div>
+      </div>
     </section>
 
-    <!-- Modal Web de Navegação de Pastas (Fallback integrado) -->
+    <!-- NAVEGAÇÃO POR ABAS DO COCKPIT (5 VISÕES CLARAS E DESPOLUÍDAS) -->
+    <nav class="cockpit-tabs-nav">
+      <button class="cockpit-tab-btn active" id="tab-nav-config" data-tab="config" type="button">
+        <span class="tab-icon">⚙️</span>
+        <span class="tab-name">Configuração</span>
+      </button>
+
+      <button class="cockpit-tab-btn" id="tab-nav-queue" data-tab="queue" type="button">
+        <span class="tab-icon">📂</span>
+        <span class="tab-name">Fila de Arquivos</span>
+        <span class="tab-badge" id="queue-summary-count">0 itens</span>
+      </button>
+
+      <button class="cockpit-tab-btn" id="tab-nav-active" data-tab="active" type="button">
+        <span class="tab-icon">⚡</span>
+        <span class="tab-name">Execuções Ativas</span>
+        <span class="tab-badge badge-active" id="active-count">0</span>
+      </button>
+
+      <button class="cockpit-tab-btn" id="tab-nav-history" data-tab="history" type="button">
+        <span class="tab-icon">📜</span>
+        <span class="tab-name">Histórico Concluído</span>
+        <span class="tab-badge" id="history-count">0</span>
+      </button>
+
+      <button class="cockpit-tab-btn" id="tab-nav-storage" data-tab="storage" type="button">
+        <span class="tab-icon">📊</span>
+        <span class="tab-name">Telemetria & Hardware</span>
+        <span class="tab-badge" id="storage-mac-sub-badge">Seguro</span>
+      </button>
+    </nav>
+
+    <!-- ÁREA DE CONTEÚDO PRINCIPAL (TODAS AS ABAS PADRONIZADAS EM CARDS) -->
+    <main class="cockpit-viewport-main">
+
+      <!-- ================================================================== -->
+      <!-- ABA 1: CONFIGURAÇÃO DO LOTE                                       -->
+      <!-- ================================================================== -->
+      <section class="tab-panel active" id="tab-panel-config">
+        <div class="studio-cards-container">
+
+          <!-- Cabeçalho Informativo -->
+          <div class="studio-page-header">
+            <div class="studio-header-text">
+              <h2 class="studio-main-title">⚙️ Parâmetros & Configuração do Lote</h2>
+              <p class="studio-main-subtitle">Ajuste as pastas de trabalho, selecione o modo de ingestão multimodal, defina o paralelismo de workers e configure os modelos de IA com total clareza.</p>
+            </div>
+            <div class="studio-header-badges">
+              <span id="batch-status-badge" class="batch-badge">Pronto</span>
+              <span id="scan-count-badge" class="scan-badge">Pronto para escanear</span>
+            </div>
+          </div>
+
+          <!-- Card 1: Pastas de Entrada e Saída -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">📁</span>
+                <div>
+                  <h3 class="card-title-text">Diretórios do Projeto (Entrada & Saída)</h3>
+                  <p class="card-subtitle-text">Defina os caminhos raiz no disco ou OneDrive. A busca de arquivos é totalmente recursiva.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <!-- Pasta de Entrada -->
+              <div class="form-group-visual">
+                <div class="form-label-row">
+                  <label for="batch-input-dir" class="visual-label">
+                    <span class="label-badge label-badge-input">ENTRADA</span>
+                    <span class="label-text">Pasta Raiz dos Arquivos (Vídeos, PDFs, Planilhas, HTML, etc.)</span>
+                  </label>
+                  <span class="label-helper-hint">Varredura profunda e recursiva</span>
+                </div>
+                <div class="visual-input-group">
+                  <input type="text" id="batch-input-dir" class="config-text-input" placeholder="/caminho/para/pasta_origem" spellcheck="false" />
+                  <button id="btn-browse-input" class="btn btn-secondary btn-lg" type="button" title="Abrir explorador de pastas">
+                    📂 Procurar
+                  </button>
+                  <button id="btn-scan-videos" class="btn btn-primary btn-lg" type="button" title="Escanear pasta e identificar todos os arquivos">
+                    🔍 Escanear Arquivos
+                  </button>
+                </div>
+              </div>
+
+              <!-- Pasta de Saída -->
+              <div class="form-group-visual">
+                <div class="form-label-row">
+                  <label for="batch-output-dir" class="visual-label">
+                    <span class="label-badge label-badge-output">SAÍDA</span>
+                    <span class="label-text">Diretório de Destino dos Relatórios RAG Markdown (.md)</span>
+                  </label>
+                  <span class="label-helper-hint">Preserva a hierarquia original das subpastas</span>
+                </div>
+                <div class="visual-input-group">
+                  <input type="text" id="batch-output-dir" class="config-text-input" placeholder="/caminho/para/pasta_saida" spellcheck="false" />
+                  <button id="btn-browse-output" class="btn btn-secondary btn-lg" type="button" title="Abrir explorador de pastas">
+                    📂 Procurar
+                  </button>
+                  <button id="btn-open-output-folder" class="btn btn-secondary btn-lg" type="button" title="Abrir pasta de saída no Finder / Sistema">
+                    📁 Abrir Pasta
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Modo de Ingestão -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">🚀</span>
+                <div>
+                  <h3 class="card-title-text">Modo de Ingestão de Mídia & Documentos</h3>
+                  <p class="card-subtitle-text">Selecione quais formatos de arquivo devem ser catalogados e processados nesta execução:</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <div class="mode-cards-grid" id="ingestion-mode-group">
+                <!-- Opção 1: Todos (All) -->
+                <div class="mode-select-card btn-mode active" data-mode="all" role="button" tabindex="0">
+                  <div class="mode-card-header">
+                    <span class="mode-card-icon">🚀</span>
+                    <span class="mode-pill-badge">Recomendado</span>
+                  </div>
+                  <div class="mode-card-title">Multimodal Completo</div>
+                  <div class="mode-card-subtitle">Vídeos + PDFs + Docs</div>
+                  <div class="mode-card-desc">Processa todos os formatos (MP4, MKV, PDF, DOCX, HTML, XLSX, PPTX...), aplicando Whisper em vídeos e extração direta em documentos.</div>
+                </div>
+
+                <!-- Opção 2: Vídeos -->
+                <div class="mode-select-card btn-mode" data-mode="videos" role="button" tabindex="0">
+                  <div class="mode-card-header">
+                    <span class="mode-card-icon">🎬</span>
+                    <span class="mode-pill-badge badge-video">Áudio & Vídeo</span>
+                  </div>
+                  <div class="mode-card-title">Apenas Vídeos</div>
+                  <div class="mode-card-subtitle">MP4, MKV, MOV, AVI, WEBM</div>
+                  <div class="mode-card-desc">Focado em reuniões gravadas, KT e workshops. Extrai áudio via ffmpeg em /tmp, transcreve com Whisper e sintetiza análises técnicas.</div>
+                </div>
+
+                <!-- Opção 3: Documentos -->
+                <div class="mode-select-card btn-mode" data-mode="documents" role="button" tabindex="0">
+                  <div class="mode-card-header">
+                    <span class="mode-card-icon">📄</span>
+                    <span class="mode-pill-badge badge-docs">Documentos</span>
+                  </div>
+                  <div class="mode-card-title">Apenas Documentos</div>
+                  <div class="mode-card-subtitle">PDF, DOCX, HTML, TXT, MD</div>
+                  <div class="mode-card-desc">Ingestão textual ultrarrápida de alta vazão sem uso de ffmpeg/Whisper. Ideal para manuais, especificações técnicas e tabelas.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Grid de 2 Cards: Concorrência + Modelos IA -->
+          <div class="studio-two-col-grid">
+
+            <!-- Card 3: Concorrência & Salvaguardas -->
+            <div class="studio-card">
+              <div class="studio-card-head">
+                <div class="card-title-group">
+                  <span class="card-icon-lg">⚡</span>
+                  <div>
+                    <h3 class="card-title-text">Concorrência & Salvaguardas</h3>
+                    <p class="card-subtitle-text">Paralelismo de workers e prevenção de retrabalho.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="studio-card-body">
+                <!-- Stepper de Paralelismo -->
+                <div class="form-group-visual">
+                  <label class="visual-label">
+                    <span class="label-text">Workers Simultâneos:</span>
+                  </label>
+                  <div class="stepper-visual-group">
+                    <button id="btn-dec-par" class="btn-stepper-lg" type="button" title="Diminuir workers">−</button>
+                    <input type="number" id="batch-parallelism" class="number-input-lg" min="1" max="8" value="5" />
+                    <button id="btn-inc-par" class="btn-stepper-lg" type="button" title="Aumentar workers">+</button>
+                    <div class="stepper-info-box">
+                      <span class="stepper-badge" id="parallelism-hint">5 workers simultâneos (Alta vazão)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Salvaguarda Skip Completed -->
+                <div class="safeguard-toggle-card">
+                  <label class="toggle-control-label" for="batch-skip-completed">
+                    <input type="checkbox" id="batch-skip-completed" class="custom-checkbox-lg" checked />
+                    <div class="toggle-text-block">
+                      <div class="toggle-title">🛡️ Pular Arquivos Já Processados</div>
+                      <div class="toggle-desc">Se o relatório .md correspondente já existir na pasta de saída, o pipeline pula o arquivo automaticamente, economizando CPU e tokens.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 4: Modelos de IA & Whisper -->
+            <div class="studio-card">
+              <div class="studio-card-head">
+                <div class="card-title-group">
+                  <span class="card-icon-lg">🤖</span>
+                  <div>
+                    <h3 class="card-title-text">Modelos de IA & Transcrição</h3>
+                    <p class="card-subtitle-text">Motor LLM corporativo e parâmetros de áudio.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="studio-card-body config-form-stack">
+                <!-- Modelo LLM -->
+                <div class="form-group-visual">
+                  <label for="batch-axet-model" class="visual-label">
+                    <span class="label-text">Modelo LLM de Síntese RAG:</span>
+                  </label>
+                  <select id="batch-axet-model" class="config-select-lg">
+                    <option value="gpt-5.6-terra" selected>gpt-5.6-terra (Padrão Corporativo NTT)</option>
+                    <option value="gpt-5.6-luna">gpt-5.6-luna (Alta Velocidade)</option>
+                    <option value="gpt-4o">gpt-4o (OpenAI)</option>
+                    <option value="eu.anthropic.claude-sonnet-5">claude-sonnet-5 (Anthropic)</option>
+                  </select>
+                </div>
+
+                <div class="form-group-visual-row">
+                  <!-- Modelo Whisper -->
+                  <div class="form-col">
+                    <label for="batch-whisper-model" class="visual-label">
+                      <span class="label-text">Whisper (Áudio):</span>
+                    </label>
+                    <select id="batch-whisper-model" class="config-select-lg">
+                      <option value="tiny">tiny (Ultrarrápido)</option>
+                      <option value="base">base (Rápido)</option>
+                      <option value="small" selected>small (Recomendado)</option>
+                      <option value="medium">medium (Alta Precisão)</option>
+                      <option value="large">large (Máxima Qualidade)</option>
+                    </select>
+                  </div>
+
+                  <!-- Idioma -->
+                  <div class="form-col">
+                    <label for="batch-whisper-lang" class="visual-label">
+                      <span class="label-text">Idioma do Áudio:</span>
+                    </label>
+                    <select id="batch-whisper-lang" class="config-select-lg">
+                      <option value="es" selected>Espanhol (es)</option>
+                      <option value="pt">Português (pt)</option>
+                      <option value="en">Inglês (en)</option>
+                      <option value="auto">Auto-detectar</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Chave de Seleção: Modo de Processamento de Vídeos (OCR/Visão vs Apenas Áudio) -->
+                <div class="form-group-visual">
+                  <label for="batch-video-vision-mode" class="visual-label">
+                    <span class="label-text">Modo de Processamento de Vídeo:</span>
+                  </label>
+                  <select id="batch-video-vision-mode" class="config-select-lg">
+                    <option value="vision_ocr" selected>👁️ Com OCR + Visão Multimodal + LLM (Frames de Tela + Áudio)</option>
+                    <option value="audio_only">🎙️ Sem OCR (Apenas Áudio + LLM Tradicional)</option>
+                  </select>
+                  <div class="config-hint-box" id="video-vision-mode-hint" style="margin-top: 6px; padding: 6px 10px; background: rgba(0, 114, 188, 0.05); border-left: 3px solid #0072bc; border-radius: 4px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4;">
+                    <span id="vision-hint-text">✨ <strong>Modo Multimodal Ativo:</strong> Analisa simultaneamente a fala (Whisper) e os frames de tela (OCR de campos, formulários, tabelas, botões e diagramas não falados via LLM multimodal).</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Card 5: Ações do Lote -->
+          <div class="studio-card studio-card-actions">
+            <div class="action-card-content">
+              <div class="action-status-indicator">
+                <div class="indicator-icon-wrap">⚡</div>
+                <div class="indicator-text-wrap">
+                  <h4 class="indicator-title">Controle Operacional do Pipeline</h4>
+                  <p class="indicator-subtitle" id="config-status-summary">Inicie o processamento com as configurações selecionadas ou navegue até a fila de arquivos.</p>
+                </div>
+              </div>
+
+              <div class="action-buttons-cluster">
+                <button id="btn-cfg-start" class="btn btn-primary btn-action-hero" type="button" title="Iniciar processamento do lote">
+                  <span class="btn-icon">▶</span> Iniciar Processamento
+                </button>
+                <button id="btn-cfg-resume" class="btn btn-resume btn-action-hero" style="display: none;" type="button" title="Retomar lote de onde parou">
+                  <span class="btn-icon">⏯</span> Retomar Lote
+                </button>
+                <button id="btn-cfg-retry" class="btn btn-warning btn-action-hero" style="display: none;" type="button" title="Reenfileirar itens com falha">
+                  <span class="btn-icon">🔄</span> Reenfileirar Falhas
+                </button>
+                <button id="btn-cfg-stop" class="btn btn-danger btn-action-hero" disabled type="button" title="Interromper execução">
+                  <span class="btn-icon">⏹</span> Interromper
+                </button>
+                <button id="btn-cfg-goto-queue" class="btn btn-secondary btn-action-hero" type="button" title="Ir para a fila de arquivos">
+                  <span class="btn-icon">📂</span> Ver Fila de Arquivos
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- ABA 2: FILA DE ARQUIVOS (PADRONIZADA EM CARDS)                    -->
+      <!-- ================================================================== -->
+      <section class="tab-panel" id="tab-panel-queue">
+        <div class="studio-cards-container">
+
+          <!-- Cabeçalho Informativo -->
+          <div class="studio-page-header">
+            <div class="studio-header-text">
+              <h2 class="studio-main-title">📂 Fila de Arquivos & Ingestão Multimodal</h2>
+              <p class="studio-main-subtitle">Monitore o status de cada item catalogado na árvore. Use os filtros rápidos de status ou a busca para inspecionar arquivos e relatórios gerados.</p>
+            </div>
+            <div class="studio-header-badges">
+              <span class="scan-badge" id="queue-header-summary">Pronto</span>
+            </div>
+          </div>
+
+          <!-- Card 1: Filtros Rápidos e Busca -->
+          <div class="studio-card studio-card-toolbar">
+            <div class="table-toolbar">
+              <!-- Campo de Busca -->
+              <div class="toolbar-search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="queue-search-input" class="search-input" placeholder="Buscar por nome do arquivo, extensão ou subpasta..." />
+                <button id="queue-search-clear" class="btn-search-clear" style="display: none;" title="Limpar busca">&times;</button>
+              </div>
+
+              <!-- Filtros Rápidos por Status -->
+              <div class="toolbar-filter-chips">
+                <button class="filter-chip active" data-filter="all" id="chip-filter-all">
+                  Todos <span class="chip-count" id="chip-count-all">0</span>
+                </button>
+                <button class="filter-chip chip-pending" data-filter="pending" id="chip-filter-pending">
+                  Pendentes <span class="chip-count" id="chip-count-pending">0</span>
+                </button>
+                <button class="filter-chip chip-running" data-filter="running" id="chip-filter-running">
+                  Executando <span class="chip-count" id="chip-count-running">0</span>
+                </button>
+                <button class="filter-chip chip-completed" data-filter="completed" id="chip-filter-completed">
+                  Concluídos <span class="chip-count" id="chip-count-completed">0</span>
+                </button>
+                <button class="filter-chip chip-error" data-filter="error" id="chip-filter-error">
+                  Erros <span class="chip-count" id="chip-count-error">0</span>
+                </button>
+              </div>
+
+              <!-- Seletor de Itens por Página -->
+              <div class="toolbar-pagesize">
+                <label for="queue-page-size">Exibir:</label>
+                <select id="queue-page-size" class="select-input-sm">
+                  <option value="25" selected>25 itens</option>
+                  <option value="50">50 itens</option>
+                  <option value="100">100 itens</option>
+                  <option value="all">Todos</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Tabela de Itens Paginada -->
+          <div class="studio-card studio-card-table">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">📋</span>
+                <div>
+                  <h3 class="card-title-text">Arquivos Catalogados no Lote</h3>
+                  <p class="card-subtitle-text">Listagem paginada com identificação automática de mídia, status da pipeline e relatórios RAG Markdown gerados.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-scroll-container">
+              <table class="queue-table">
+                <thead>
+                  <tr>
+                    <th style="width: 55px; text-align: center;">#</th>
+                    <th>Arquivo & Pasta de Origem</th>
+                    <th style="width: 150px;">Tamanho / Local</th>
+                    <th style="width: 240px;">Status & Etapa</th>
+                    <th style="width: 105px;">Duração</th>
+                    <th style="width: 230px;">Relatório RAG (.md)</th>
+                  </tr>
+                </thead>
+                <tbody id="queue-table-body">
+                  <tr class="queue-empty-row">
+                    <td colspan="6">Carregando itens da fila...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Rodapé de Paginação Integrado -->
+            <div class="table-pagination-footer" id="queue-pagination-footer">
+              <div class="pagination-info" id="queue-pagination-info">
+                Mostrando 0 a 0 de 0 itens
+              </div>
+              <div class="pagination-controls">
+                <button class="btn-pagination" id="queue-first-page" title="Primeira Página">⏮ Primeira</button>
+                <button class="btn-pagination" id="queue-prev-page" title="Página Anterior">◀ Anterior</button>
+                <span class="pagination-current-label" id="queue-current-page-label">Página 1 de 1</span>
+                <button class="btn-pagination" id="queue-next-page" title="Próxima Página">Próxima ▶</button>
+                <button class="btn-pagination" id="queue-last-page" title="Última Página">Última ⏭</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- ABA 3: EXECUÇÕES ATIVAS (PADRONIZADA EM CARDS)                    -->
+      <!-- ================================================================== -->
+      <section class="tab-panel" id="tab-panel-active">
+        <div class="studio-cards-container">
+
+          <!-- Cabeçalho Informativo -->
+          <div class="studio-page-header">
+            <div class="studio-header-text">
+              <h2 class="studio-main-title">⚡ Execuções Ativas em Tempo Real</h2>
+              <p class="studio-main-subtitle">Acompanhe os workers processando arquivos em paralelo, tempo decorrido de cada etapa e logs instantâneos do pipeline.</p>
+            </div>
+            <div class="studio-header-badges">
+              <span class="scan-badge" id="active-workers-badge">0 workers ativos</span>
+            </div>
+          </div>
+
+          <!-- Card: Grid de Workers Ativos -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">🖥️</span>
+                <div>
+                  <h3 class="card-title-text">Pool de Workers Multimodais</h3>
+                  <p class="card-subtitle-text">Cada worker gerencia uma instância isolada com salvaguarda de SSD e remoção imediata de arquivos temporários.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <div class="active-runs-container">
+                <div class="active-runs-grid" id="active-runs-grid">
+                  <div class="empty-state" id="active-runs-empty">
+                    <div class="empty-state-icon">⚡</div>
+                    <div class="empty-state-title">Nenhuma execução ativa no momento</div>
+                    <div class="empty-state-desc">Os workers em paralelo aparecerão aqui em tempo real ao iniciar o processamento do lote.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- ABA 4: HISTÓRICO CONCLUÍDO (PADRONIZADA EM CARDS)                 -->
+      <!-- ================================================================== -->
+      <section class="tab-panel" id="tab-panel-history">
+        <div class="studio-cards-container">
+
+          <!-- Cabeçalho Informativo -->
+          <div class="studio-page-header">
+            <div class="studio-header-text">
+              <h2 class="studio-main-title">📜 Histórico de Execuções Concluídas</h2>
+              <p class="studio-main-subtitle">Auditoria e registro de todas as execuções finalizadas, tempos de ciclo por arquivo e relatórios RAG salvos no disco.</p>
+            </div>
+            <div class="studio-header-badges">
+              <span class="scan-badge" id="history-total-badge">Histórico</span>
+            </div>
+          </div>
+
+          <!-- Card 1: Barra de Filtros e Busca no Histórico -->
+          <div class="studio-card studio-card-toolbar">
+            <div class="table-toolbar">
+              <div class="toolbar-search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="history-search-input" class="search-input" placeholder="Filtrar histórico por nome ou run ID..." />
+                <button id="history-search-clear" class="btn-search-clear" style="display: none;">&times;</button>
+              </div>
+              <div class="toolbar-filter-chips">
+                <button class="filter-chip active" data-hist-filter="all">Todos</button>
+                <button class="filter-chip chip-completed" data-hist-filter="success">Sucesso</button>
+                <button class="filter-chip chip-error" data-hist-filter="error">Com Erro</button>
+              </div>
+              <div class="toolbar-pagesize">
+                <label for="history-page-size">Exibir:</label>
+                <select id="history-page-size" class="select-input-sm">
+                  <option value="15" selected>15 itens</option>
+                  <option value="30">30 itens</option>
+                  <option value="50">50 itens</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Lista de Execuções Finalizadas em Cards (Padrão Execuções Ativas) -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">📑</span>
+                <div>
+                  <h3 class="card-title-text">Registro de Execuções Finalizadas</h3>
+                  <p class="card-subtitle-text">Cards detalhados de cada execução finalizada com stepper de fluxo, metadados, passos e logs.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <div class="history-runs-container">
+                <div class="history-runs-grid" id="history-runs-grid">
+                  <div class="empty-state" id="history-runs-empty">
+                    <div class="empty-state-icon">📜</div>
+                    <div class="empty-state-title">Aguardando execuções no histórico...</div>
+                    <div class="empty-state-desc">As execuções concluídas ou finalizadas aparecerão aqui em formato de cards completos.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-pagination-footer" id="history-pagination-footer">
+              <div class="pagination-info" id="history-pagination-info">
+                Mostrando 0 de 0 execuções
+              </div>
+              <div class="pagination-controls">
+                <button class="btn-pagination" id="history-first-page" title="Primeira Página">⏮ Primeira</button>
+                <button class="btn-pagination" id="history-prev-page" title="Página Anterior">◀ Anterior</button>
+                <span class="pagination-current-label" id="history-current-page-label">Página 1 de 1</span>
+                <button class="btn-pagination" id="history-next-page" title="Próxima Página">Próxima ▶</button>
+                <button class="btn-pagination" id="history-last-page" title="Última Página">Última ⏭</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================================================================== -->
+      <!-- ABA 5: TELEMETRIA, HARDWARE & STORAGE (PADRONIZADA EM CARDS)      -->
+      <!-- ================================================================== -->
+      <section class="tab-panel" id="tab-panel-storage">
+        <div class="studio-cards-container">
+
+          <!-- Cabeçalho Informativo -->
+          <div class="studio-page-header">
+            <div class="studio-header-text">
+              <h2 class="studio-main-title">📊 Telemetria de Sistema, Hardware & Armazenamento</h2>
+              <p class="studio-main-subtitle">Monitoramento contínuo em tempo real de CPU, memória RAM, hidratação de arquivos no OneDrive e salvaguardas de disco SSD.</p>
+            </div>
+            <div class="studio-header-badges">
+              <span class="scan-badge" id="telemetry-refresh-badge">
+                <span class="pulse-dot" style="display:inline-block; margin-right:4px;"></span>
+                Tempo Real (1s)
+              </span>
+            </div>
+          </div>
+
+          <!-- CARD 1: MONITOR DE HARDWARE (VELOCÍMETROS + GRÁFICO DINÂMICO DE LINHAS) -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">📈</span>
+                <div>
+                  <h3 class="card-title-text">Desempenho de Hardware em Tempo Real (CPU & Memória RAM)</h3>
+                  <p class="card-subtitle-text">Acompanhamento gráfico contínuo com histórico temporal de carga de processamento e alocação de memória.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <!-- Linha Superior: Velocímetros de Telemetria de Hardware -->
+              <div class="hardware-gauges-row">
+                <!-- Velocímetro CPU -->
+                <div class="hardware-gauge-box" id="gauge-cpu-card">
+                  <div class="gauge-svg-wrap-lg">
+                    <svg class="gauge-svg" viewBox="0 0 110 65">
+                      <path class="gauge-track" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" />
+                      <path class="gauge-fill gauge-fill-cpu" id="gauge-cpu-fill" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="125.66" />
+                      <line class="gauge-needle" id="gauge-cpu-needle" x1="55" y1="55" x2="55" y2="20" stroke-linecap="round" />
+                      <circle class="gauge-center-hub" cx="55" cy="55" r="3.5" />
+                    </svg>
+                  </div>
+                  <div class="gauge-info-lg">
+                    <div class="gauge-label-row">
+                      <span class="gauge-name-lg">PROCESSADOR (CPU)</span>
+                      <span class="gauge-val-badge gauge-val-cpu" id="gauge-cpu-val">0%</span>
+                    </div>
+                    <span class="gauge-detail-lg" id="gauge-cpu-sub">12 Cores • Apple Silicon</span>
+                  </div>
+                </div>
+
+                <!-- Velocímetro RAM -->
+                <div class="hardware-gauge-box" id="gauge-mem-card">
+                  <div class="gauge-svg-wrap-lg">
+                    <svg class="gauge-svg" viewBox="0 0 110 65">
+                      <path class="gauge-track" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" />
+                      <path class="gauge-fill gauge-fill-mem" id="gauge-mem-fill" d="M 15 55 A 40 40 0 0 1 95 55" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="125.66" />
+                      <line class="gauge-needle" id="gauge-mem-needle" x1="55" y1="55" x2="55" y2="20" stroke-linecap="round" />
+                      <circle class="gauge-center-hub" cx="55" cy="55" r="3.5" />
+                    </svg>
+                  </div>
+                  <div class="gauge-info-lg">
+                    <div class="gauge-label-row">
+                      <span class="gauge-name-lg">MEMÓRIA RAM</span>
+                      <span class="gauge-val-badge gauge-val-mem" id="gauge-mem-val">0%</span>
+                    </div>
+                    <span class="gauge-detail-lg" id="gauge-mem-sub">0 / 0 GB</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Gráfico Dinâmico de Linhas em Tempo Real -->
+              <div class="dynamic-chart-card-wrapper">
+                <div class="chart-header-bar">
+                  <div class="chart-legend-group">
+                    <span class="chart-legend-item legend-cpu">
+                      <span class="legend-color-dot dot-cpu"></span>
+                      <strong>Uso de CPU</strong>
+                      <span class="legend-current-val" id="chart-legend-cpu-val">0%</span>
+                    </span>
+                    <span class="chart-legend-item legend-mem">
+                      <span class="legend-color-dot dot-mem"></span>
+                      <strong>Memória RAM</strong>
+                      <span class="legend-current-val" id="chart-legend-mem-val">0%</span>
+                    </span>
+                  </div>
+                  <div class="chart-timespan-label">
+                    <span>Escala: 0% a 100% • Últimos 60 segundos</span>
+                  </div>
+                </div>
+
+                <!-- Canvas de Plotagem em Tempo Real -->
+                <div class="chart-canvas-container">
+                  <canvas id="cpu-ram-chart" width="1040" height="220"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 2: ARMAZENAMENTO & SALVAGUARDAS DE DISCO -->
+          <div class="studio-card">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">💾</span>
+                <div>
+                  <h3 class="card-title-text">Armazenamento, Nuvem & Área Temporária</h3>
+                  <p class="card-subtitle-text">Status de hidratação do OneDrive, espaço livre no macOS e gerenciamento de arquivos transitórios.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <div class="storage-dashboard-grid">
+                <!-- Card 1: Hidratação OneDrive -->
+                <div class="telemetry-card-full storage-card-onedrive">
+                  <div class="card-head">
+                    <div class="card-head-left">
+                      <span class="card-icon">☁️</span>
+                      <h3>Hidratação OneDrive (Volume de Entrada)</h3>
+                    </div>
+                    <span class="storage-status-badge" id="storage-onedrive-badge">On-Demand</span>
+                  </div>
+                  <div class="card-body">
+                    <div class="large-metric" id="metric-onedrive-storage">0.00 GB / 0.00 GB</div>
+                    <div class="storage-progress-wrapper">
+                      <div class="storage-progress-bar" id="storage-hydration-bar" style="width: 0%;"></div>
+                    </div>
+                    <div class="card-desc" id="metric-onedrive-sub">0 baixados no disco • 0 online-only (na nuvem)</div>
+                  </div>
+                </div>
+
+                <!-- Card 2: Espaço Livre SSD Mac -->
+                <div class="telemetry-card-full storage-card-mac">
+                  <div class="card-head">
+                    <div class="card-head-left">
+                      <span class="card-icon">💾</span>
+                      <h3>Espaço Livre SSD (macOS Local)</h3>
+                    </div>
+                    <span class="storage-status-badge badge-safe" id="storage-mac-badge-card">Seguro (>3GB)</span>
+                  </div>
+                  <div class="card-body">
+                    <div class="large-metric" id="metric-mac-free-card">-- GB Livres</div>
+                    <div class="card-desc" id="metric-mac-sub-card">Salvaguarda global: o despachador pausa novos inícios se o espaço cair abaixo de 3 GB.</div>
+                  </div>
+                </div>
+
+                <!-- Card 3: Área Temporária /tmp -->
+                <div class="telemetry-card-full storage-card-tmp">
+                  <div class="card-head">
+                    <div class="card-head-left">
+                      <span class="card-icon">🛡️</span>
+                      <h3>Área Temporária de Trabalho (/tmp)</h3>
+                    </div>
+                    <span class="storage-status-badge badge-clean" id="storage-tmp-badge">Otimizado</span>
+                  </div>
+                  <div class="card-body">
+                    <div class="large-metric" id="metric-tmp-size">0.0 MB</div>
+                    <div class="card-desc" id="metric-tmp-sub">Vídeo temporário é removido do SSD imediatamente após extração de áudio pelo ffmpeg. O OneDrive fica 100% preservado.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 3: TELEMETRIA & CONTROLE CUMULATIVO DE TOKENS (LLM / RAG) -->
+          <div class="studio-card" id="card-telemetry-tokens">
+            <div class="studio-card-head">
+              <div class="card-title-group">
+                <span class="card-icon-lg">🪙</span>
+                <div>
+                  <h3 class="card-title-text">Consumo Cumulativo de Tokens & Modelos IA</h3>
+                  <p class="card-subtitle-text">Auditoria contínua de tokens de entrada (Prompt) e saída (Completion) gerados nas chamadas axet-code e modelos de linguagem.</p>
+                </div>
+              </div>
+              <div class="card-head-actions">
+                <span class="token-status-pill">
+                  <span class="pulse-dot"></span> Monitor Ativo
+                </span>
+              </div>
+            </div>
+
+            <div class="studio-card-body">
+              <div class="token-metrics-grid">
+                <!-- Métrica 1: Total Cumulativo -->
+                <div class="token-metric-box metric-total-box">
+                  <div class="token-metric-header">
+                    <span class="token-metric-title">TOTAL CUMULATIVO</span>
+                    <span class="token-metric-badge">Global</span>
+                  </div>
+                  <div class="token-metric-value" id="tokens-total-val">0</div>
+                  <div class="token-metric-sub" id="tokens-total-sub">~0k tokens processados no lote</div>
+                </div>
+
+                <!-- Métrica 2: Tokens de Prompt (Entrada) -->
+                <div class="token-metric-box">
+                  <div class="token-metric-header">
+                    <span class="token-metric-title">TOKENS DE ENTRADA (PROMPT)</span>
+                    <span class="token-metric-pct" id="tokens-prompt-pct">0%</span>
+                  </div>
+                  <div class="token-metric-value" id="tokens-prompt-val">0</div>
+                  <div class="token-metric-sub">Contexto injetado, regras RAG e transcrições</div>
+                </div>
+
+                <!-- Métrica 3: Tokens de Saída (Completion) -->
+                <div class="token-metric-box">
+                  <div class="token-metric-header">
+                    <span class="token-metric-title">TOKENS DE SAÍDA (COMPLETION)</span>
+                    <span class="token-metric-pct" id="tokens-completion-pct">0%</span>
+                  </div>
+                  <div class="token-metric-value" id="tokens-completion-val">0</div>
+                  <div class="token-metric-sub">Relatórios Markdown e sínteses geradas</div>
+                </div>
+
+                <!-- Métrica 4: Vazão / Média por Item -->
+                <div class="token-metric-box">
+                  <div class="token-metric-header">
+                    <span class="token-metric-title">MÉDIA POR ITEM</span>
+                    <span class="token-metric-badge">Eficiência</span>
+                  </div>
+                  <div class="token-metric-value" id="tokens-avg-val">0</div>
+                  <div class="token-metric-sub" id="tokens-rate-sub">0 tokens/item médios</div>
+                </div>
+              </div>
+
+              <!-- Barra de Distribuição de Tokens -->
+              <div class="token-distribution-wrap">
+                <div class="token-distribution-header">
+                  <span>Distribuição de Contexto (Entrada vs Saída)</span>
+                  <span id="token-distrib-ratio">Prompt: 85% • Completion: 15%</span>
+                </div>
+                <div class="token-distribution-bar">
+                  <div class="distrib-fill distrib-prompt" id="distrib-prompt-bar" style="width: 85%;" title="Tokens de Entrada (Prompt)"></div>
+                  <div class="distrib-fill distrib-completion" id="distrib-completion-bar" style="width: 15%;" title="Tokens de Saída (Completion)"></div>
+                </div>
+              </div>
+
+              <!-- Tabela / Distribuição por Modelo IA -->
+              <div class="token-models-breakdown">
+                <div class="breakdown-title">Detalhamento por Modelo de IA:</div>
+                <div class="token-model-pills" id="token-model-pills">
+                  <span class="token-model-pill">
+                    <span class="model-name">🤖 gpt-5.6-terra</span>
+                    <span class="model-toks" id="tok-model-primary">-- tokens</span>
+                  </span>
+                  <span class="token-model-pill">
+                    <span class="model-name">🎙️ whisper (local metal)</span>
+                    <span class="model-toks">Áudio ➔ Texto</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- MODAL DE SELEÇÃO DE PASTAS -->
     <div class="folder-modal-backdrop" id="folder-modal" style="display: none;">
       <div class="folder-modal-content">
         <div class="folder-modal-header">
-          <h3 id="folder-modal-title">Selecionar Pasta</h3>
-          <button class="modal-close-btn" id="folder-modal-close">&times;</button>
+          <div class="folder-modal-header-info">
+            <h3 id="folder-modal-title">Selecionar Diretório de Entrada (Vídeos)</h3>
+            <span class="folder-modal-subtitle">Navegue pelas pastas, digite/cole qualquer caminho ou use os atalhos rápidos</span>
+          </div>
+          <button class="modal-close-btn" id="folder-modal-close" title="Fechar">&times;</button>
         </div>
+
+        <!-- Barra de Caminho Editável -->
         <div class="folder-modal-path-bar">
           <span class="path-label">Caminho:</span>
-          <input type="text" id="folder-modal-current-path" class="text-input" readonly />
-          <button id="folder-modal-up-btn" class="btn btn-ghost" title="Subir um nível">⬆ Subir</button>
+          <div class="path-input-group">
+            <input type="text" id="folder-modal-current-path" class="text-input folder-path-input" placeholder="Cole ou digite o caminho da pasta..." spellcheck="false" />
+            <button id="folder-modal-go-btn" class="btn btn-secondary btn-sm" title="Navegar até o caminho digitado">➜ Ir</button>
+          </div>
+          <button id="folder-modal-up-btn" class="btn btn-ghost btn-sm" title="Subir um nível na hierarquia">⬆ Subir</button>
         </div>
-        <div class="folder-modal-shortcuts">
-          <button class="btn-chip" id="chip-ws">Workspace</button>
-          <button class="btn-chip" id="chip-videos">videos/</button>
-          <button class="btn-chip" id="chip-output">output/</button>
-          <button class="btn-chip" id="chip-home">Home (~)</button>
+
+        <!-- Navegação por Breadcrumbs (Migalhas de Pão) -->
+        <div class="folder-modal-breadcrumbs" id="folder-modal-breadcrumbs"></div>
+
+        <!-- Atalhos Rápidos com Chips Dinâmicos -->
+        <div class="folder-modal-shortcuts-container">
+          <span class="shortcuts-label">Atalhos:</span>
+          <div class="folder-modal-shortcuts" id="folder-modal-shortcuts">
+            <button class="btn-chip" id="chip-home">🏠 Home (~)</button>
+            <button class="btn-chip" id="chip-dev">💻 dev/</button>
+            <button class="btn-chip" id="chip-onedrive">☁️ OneDrive</button>
+            <button class="btn-chip" id="chip-ws">📂 Workspace</button>
+            <button class="btn-chip" id="chip-videos">🎬 videos/</button>
+            <button class="btn-chip" id="chip-downloads">📥 Downloads</button>
+            <button class="btn-chip" id="chip-output">📤 output/</button>
+          </div>
         </div>
+
+        <!-- Barra de Busca / Filtro em Tempo Real e Opção de Pastas Ocultas -->
+        <div class="folder-modal-filter-bar">
+          <div class="folder-search-box">
+            <span class="folder-search-icon">🔍</span>
+            <input type="text" id="folder-modal-search" class="folder-search-input" placeholder="Filtrar pastas na lista atual..." />
+            <button id="folder-modal-search-clear" class="btn-search-clear" style="display: none;" title="Limpar filtro">&times;</button>
+          </div>
+          <label class="folder-modal-hidden-toggle" title="Exibir pastas do sistema que começam com ponto (.)">
+            <input type="checkbox" id="folder-modal-show-hidden" />
+            <span>Pastas ocultas</span>
+          </label>
+        </div>
+
+        <!-- Lista de Pastas com Rolagem e Badges -->
         <div class="folder-list" id="folder-modal-list">
           <div class="folder-item">Carregando pastas...</div>
         </div>
+
+        <!-- Rodapé do Modal -->
         <div class="folder-modal-footer">
-          <button class="btn btn-ghost" id="folder-modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="folder-modal-select">✓ Selecionar Esta Pasta</button>
+          <div class="folder-modal-status-text" id="folder-modal-status"></div>
+          <div class="folder-modal-actions">
+            <button class="btn btn-ghost" id="folder-modal-cancel">Cancelar</button>
+            <button class="btn btn-primary" id="folder-modal-select">✓ Selecionar Esta Pasta</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Seção Unificada com Abas: Execuções Ativas | Histórico de Execuções -->
-    <section class="runs-tabs-container">
-      <div class="runs-tabs-bar">
-        <button class="runs-tab-btn active" id="tab-btn-active" type="button">
-          <span class="tab-label">Execuções Ativas</span>
-          <span class="tab-badge" id="active-count">0</span>
-        </button>
-        <button class="runs-tab-btn" id="tab-btn-history" type="button">
-          <span class="tab-label">Histórico de Execuções</span>
-          <span class="tab-badge" id="history-count">0</span>
-        </button>
-      </div>
+      <!-- MODAL DE AUTENTICAÇÃO OKTA SSO & API GATEWAY -->
+    <div class="modal-overlay" id="sso-modal-overlay">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3><span>🏢</span> Autenticação Corporativa Okta SSO & Gateway</h3>
+          <button class="modal-close-btn" id="sso-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="sso-profile-card">
+            <div class="sso-profile-avatar" id="sso-modal-avatar">GB</div>
+            <div class="sso-profile-details">
+              <div class="sso-profile-name" id="sso-modal-user">Gustavo Costa Berbert</div>
+              <div class="sso-profile-email" id="sso-modal-email">gustavo.berbert@nttdata.com</div>
+              <div class="sso-profile-role" id="sso-modal-org">NTT DATA EMEAL • RAG Pipeline Architect</div>
+            </div>
+          </div>
 
-      <!-- Aba 1: Execuções Ativas (Grade de Cards) -->
-      <div class="tab-content" id="tab-content-active">
-        <div class="active-runs-grid" id="active-runs-grid">
-          <div class="empty-state" id="active-runs-empty">Nenhuma execução em andamento. Aguardando telemetria...</div>
+          <div class="sso-gateway-box">
+            <div class="sso-gateway-title">
+              <span>⚡</span> Conexão com API Gateway (:3001)
+            </div>
+            <div class="sso-gateway-desc">
+              O Cockpit está vinculado ao API Gateway central. As requisições são assinadas automaticamente com renovação silenciosa em segundo plano (background auto-refresh), eliminando a necessidade de expiração e refresh manual de tokens.
+            </div>
+          </div>
+
+          <div class="sso-meta-list">
+            <div class="sso-meta-item">
+              <span>Provedor de Identidade (IdP):</span>
+              <strong id="sso-modal-idp">Okta Enterprise OIDC (OneNTT)</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Login Corporativo:</span>
+              <strong id="sso-modal-login">gcostabe@emeal.nttdata.com</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Okta User ID:</span>
+              <strong id="sso-modal-okta-id" style="font-family: monospace; font-size: 11px;">00u9pq4pchFsGiPHG417</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Status do Token / Sessão:</span>
+              <strong id="sso-modal-token-ttl" style="color: #059669;">🟢 Ativo (Sessão Válida)</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Status do API Gateway:</span>
+              <strong id="sso-modal-gw-status" style="color: #059669;">🟢 Online (:8766 / :3001)</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Mecanismo de Renovação:</span>
+              <strong style="color: #0072bc;">Auto-Refresh Transparente (Ativo)</strong>
+            </div>
+            <div class="sso-meta-item">
+              <span>Última Sincronização:</span>
+              <strong id="sso-last-sync-time">Agora</strong>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="sso-btn-refresh-token">🔄 Sincronizar Sessão</button>
+          <button class="btn btn-primary" id="sso-modal-ok">Entendido</button>
         </div>
       </div>
-
-      <!-- Aba 2: Histórico de Execuções (Tabela Completa) -->
-      <div class="tab-content" id="tab-content-history" style="display: none;">
-        <div class="panel history-panel" style="margin-top: 0;">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Vídeo</th>
-                <th>Status</th>
-                <th>Duração</th>
-                <th>Início</th>
-                <th>Fim</th>
-                <th>Etapas (Passos 1 a 4)</th>
-                <th>Detalhes</th>
-              </tr>
-            </thead>
-            <tbody id="history-body">
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    </div>
 
   </div>
 

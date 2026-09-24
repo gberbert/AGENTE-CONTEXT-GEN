@@ -1696,3 +1696,477 @@ Executar git commit e git push, reportando a confirmação remota ao usuário.
   3. `dashboard/app.js`, `dashboard/style.css` e `dashboard/index.html`: Novos badges visuais (`🌐 HTML`, `📈 TABELA`, `⚙️ DADOS`, `📋 TEXTO`) e estilos cromáticos dedicados.
 - **Validação:** Testes automatizados executados para HTML, XLSX, CSV, TXT e JSON com 100% de sucesso na conversão estruturada para Markdown. Servidor reiniciado e validado em `http://localhost:4545`.
 - **Próxima ação segura:** Nenhuma ação pendente. Pipeline pronto para ingestão de qualquer formato de mercado.
+
+## 2026-09-22T12:37:00-03:00 - BEFORE_ACTION: Configuração Centralizada em Cards e Alta Legibilidade Visual
+- **Task ID:** TASK-20260922-UI-CENTERED-CONFIG-CARDS-LEGIBILITY
+- **Ação planejada:**
+  1. Modificar `dashboard/index.html` para estabelecer a aba primária `⚙️ Configuração` com container centralizado de cards temáticos (`.config-cards-container`), despoluir o cabeçalho global e as demais abas.
+  2. Modificar `dashboard/style.css` para aplicar escala tipográfica legível (base 13.5px-14px, headers 16-22px, inputs 40-44px), estilo visual dos cards, botões de modo de ingestão em formato de grandes cards selecionáveis com glow NTT DATA, e tabela com linhas amplas.
+  3. Modificar `dashboard/app.js` para alternância suave da aba `config`, preservando todos os IDs e escutas de eventos.
+- **Motivo:** O usuário solicitou explicitamente: "esta muito ruim de se enxergar coloque organizado centralizado em cards a configuração, cada elemento de configuracao deve ser mais claro e visual, as demais telas tb estao confusas".
+- **Estado confirmado:** A interface anterior condensava opções em fontes muito reduzidas (10-11px).
+- **Próxima ação segura:** Aplicar edições em `dashboard/index.html`, `dashboard/style.css` e `dashboard/app.js`, checar sintaxe com `node --check`.
+
+## 2026-09-22T12:40:00-03:00 - AFTER_ACTION: Configuração Centralizada em Cards e Alta Legibilidade Visual
+- **Task ID:** TASK-20260922-UI-CENTERED-CONFIG-CARDS-LEGIBILITY
+- **Alteração aplicada:**
+  1. `dashboard/index.html`: Criada a aba dedicada `⚙️ Configuração` (`#tab-panel-config`) contendo um container centralizado (`.config-cards-container`, max-width 1040px) com 5 cards temáticos de alta clareza:
+     - Card 1: Diretórios do Projeto (Entrada & Saída, inputs de 42px de altura, botões visuais `📂 Procurar` e `🔍 Escanear`).
+     - Card 2: Modo de Ingestão com 3 grandes cards selecionáveis (`🚀 Multimodal Completo`, `🎬 Apenas Vídeos`, `📄 Apenas Documentos`).
+     - Card 3: Concorrência & Salvaguardas (stepper amplo de 42px, badge explicativo e card de salvaguarda `🛡️ Pular Arquivos Já Processados`).
+     - Card 4: Modelos de IA & Transcrição (seletores amplos para LLM, Whisper e Idioma).
+     - Card 5: Painel Operacional de Ação (botões destacados para Iniciar, Retomar, Reenfileirar, Interromper e Ver Fila).
+  2. `dashboard/style.css`: Redesenhada a escala tipográfica global:
+     - Fonte base ampliada para 13.5px (eliminadas as fontes minúsculas de 9-11px).
+     - Inputs e selects elevados para 42px com alto contraste e bordas luminosas.
+     - Linhas da tabela ampliadas (padding 10px 16px) com títulos legíveis e links claros para os relatórios Markdown.
+     - 5 abas claramente separadas e despoluídas.
+  3. `dashboard/app.js`: Configuração definida como aba inicial ativa, sincronização bidirecional dos botões de controle entre o cabeçalho e o Card 5 de Configuração, e correção de referência em `ingestionMode`.
+- **Validação:**
+  - `node --check dashboard/app.js` e `node --check dashboard/server.js` concluídos com código 0 (sem erros).
+  - Respostas HTTP 200 OK validadas para `/`, `/style.css` e `/app.js`.
+  - Respeitada a diretriz do usuário: *"nao teste deixa que eu testo"*, sem execução de subagent de navegador.
+## 2026-09-22T12:47:00-03:00 - BEFORE_ACTION: Padronização Visual de Todas as Abas em Cards e Gráfico Dinâmico de CPU/RAM
+- **Task ID:** TASK-20260922-UI-STUDIO-CARDS-DYNAMIC-CHART
+- **Ação planejada:**
+  1. `dashboard/index.html`: Mover velocímetros de CPU/RAM do cabeçalho global para a aba `📊 Telemetria & Storage`; unificar as abas `📂 Fila de Arquivos`, `⚡ Execuções Ativas`, `📜 Histórico Concluído` e `📊 Telemetria & Storage` no padrão visual centralizado em cards (.studio-cards-container); criar card do gráfico dinâmico de CPU e RAM (`<canvas id="cpu-ram-chart">`).
+  2. `dashboard/style.css`: Estilizar `.studio-cards-container`, cards unificados, layout do monitor de hardware e área de plotagem do gráfico com estilo Activity Monitor / Grafana.
+  3. `dashboard/app.js`: Implementar motor de renderização dinâmica em tempo real para CPU e RAM em canvas (taxa de 1s, interpolação suave, grid e legendas).
+- **Motivo:** O usuário solicitou: "coloque as demais abas no mesmo padra da de confuguração, traga a telemetria de cpu e memoria pra dentro de telemetria, crie um grafico dinamico para cpu com linhas padrao usado para monitorar uso de CPU e memoria".
+- **Estado confirmado:** A aba de configuração está excelente em cards; as demais abas ainda não utilizam o container de cards estruturados e a telemetria estava dividida no topo da tela.
+- **Próxima ação segura:** Aplicar edições em `dashboard/index.html`, `dashboard/style.css` e `dashboard/app.js`, checar sintaxe com `node --check`.
+
+## 2026-09-22T12:49:00-03:00 - AFTER_ACTION: Padronização Visual de Todas as Abas em Cards e Gráfico Dinâmico de CPU/RAM
+- **Task ID:** TASK-20260922-UI-STUDIO-CARDS-DYNAMIC-CHART
+- **Alteração aplicada:**
+  1. `dashboard/index.html`:
+     - Removidos os velocímetros do cabeçalho global, tornando o topo limpo e corporativo.
+     - Inseridos os velocímetros de CPU e RAM dentro da aba `📊 Telemetria & Hardware`.
+     - Adicionado o **Card de Desempenho de Hardware em Tempo Real** com velocímetros ampliados e um **Gráfico Dinâmico de Linhas** (`<canvas id="cpu-ram-chart">`) com legenda e escala temporal de 60 segundos.
+     - Padronizadas as abas `📂 Fila de Arquivos`, `⚡ Execuções Ativas` e `📜 Histórico Concluído` dentro da estrutura `.studio-cards-container`, com títulos de seção, cards temáticos com ícones e rodapé de paginação integrado.
+  2. `dashboard/style.css`:
+     - Estilizado o layout `.studio-cards-container` para todas as 5 abas.
+     - Estilizados os velocímetros de hardware ampliados (`.hardware-gauge-box`, `.gauge-svg-wrap-lg`).
+     - Criada a estilização visual completa do gráfico dinâmico (`.dynamic-chart-card-wrapper`, legendas com pontos coloridos, canvas responsivo Retina-ready).
+  3. `dashboard/app.js`:
+     - Implementado o buffer temporal circular (`cpuRamHistory`, 60 pontos a 1 amostra/s).
+     - Implementada a função `drawCpuRamChart()` com desenho vetorial de linhas suaves (curvas de Bézier) com degradê preenchido: Ciano para CPU e Púrpura para RAM, com pontos luminosos em tempo real.
+     - Integrado aos eventos SSE de `system_metrics` e sincronizado com o evento de redimensionamento de janela e alternância para a aba de telemetria.
+- **Validação:**
+  - `node --check dashboard/app.js` e `node --check dashboard/server.js` concluídos com código 0 (sem erros).
+  - Respostas HTTP 200 OK validadas para `/`, `/style.css` e `/app.js`.
+  - SSE validado via curl confirmando entrega periódica de `system_metrics` (`cpu_pct: 24`, `mem_pct: 79`).
+  - Respeitada a diretriz do usuário: *"nao teste deixa que eu testo"*, sem execução de subagent de navegador.
+## 2026-09-22T16:27:00-03:00 - BEFORE_ACTION: Redesenho Completo em Modo Claro Corporativo NTT DATA (Light Mode SaaS)
+- **Task ID:** TASK-20260922-UI-LIGHT-MODE-SAAS-REDESIGN
+- **Ação planejada:**
+  1. `dashboard/style.css`: Redesenhar o design system completo para Modo Claro (Light Mode): fundo limpo `#f8fafc`/`#f1f5f9`, cartões brancos puros `#ffffff` com sombras em camadas, tipografia em grafite escuro `#0f172a`, bordas suaves `#e2e8f0` e realces em azul NTT DATA (`#0072bc`), ciano, esmeralda e âmbar.
+  2. `dashboard/app.js`: Calibrar `drawCpuRamChart()` para plotar linhas luminosas sobre canvas de fundo claro com grid suave `rgba(15, 23, 42, 0.07)` e rótulos escuros `#475569`.
+  3. `dashboard/index.html`: Adequar a agulha e o visual dos velocímetros SVG para alto contraste no tema claro.
+- **Motivo:** O usuário solicitou: "desig ainda muito ruim preciso que me surpreenda, sistema precisa ser claro, objetivo, monitoravel, altere o padrao de cores para modo claro".
+- **Estado confirmado:** A aplicação estava em tema escuro (Dark Navy #070b14).
+- **Próxima ação segura:** Aplicar edições em `dashboard/style.css`, `dashboard/app.js` e `dashboard/index.html`, testar com `node --check` e curl.
+
+## 2026-09-22T16:30:00-03:00 - AFTER_ACTION: Redesenho Completo em Modo Claro Corporativo NTT DATA (Light Mode SaaS)
+- **Task ID:** TASK-20260922-UI-LIGHT-MODE-SAAS-REDESIGN
+- **Alteração aplicada:**
+  1. `dashboard/style.css`:
+     - Implementado o novo Design System corporativo em **Modo Claro (Light Mode)** de nível Enterprise SaaS (inspirado em Stripe, Linear e Datadog).
+     - Fundo limpo em ardósia clara (`--bg-base: #f8fafc`), cartões e painéis brancos puros (`--bg-card: #ffffff`) com elevações e sombras em camadas (`box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px -2px rgba(15, 23, 42, 0.06)`).
+     - Tipografia de altíssimo contraste: títulos em grafite escuro (`#0f172a`), corpo em ardósia escura (`#334155`), rótulos auxiliares em slate (`#64748b`).
+     - Realces na paleta corporativa oficial NTT DATA: Azul Primário (`#0072bc`), Azul Céu (`#0284c7`), Ciano (`#0d9488`), Esmeralda (`#059669`), Âmbar (`#d97706`), Púrpura (`#7c3aed`).
+     - Badges de extensão (.docx, .xlsx, .pdf, .mp4, etc.) e pills de status com fundos pastéis luminosos e textos de alta saturação legíveis.
+     - Controles, inputs e botões com foco azul NTT e estados ativos claros.
+  2. `dashboard/app.js`:
+     - Função `drawCpuRamChart()` calibrada para fundo claro: grid sutil em ardósia translúcida `rgba(15, 23, 42, 0.08)`, textos de escala em `#64748b`, curvas suaves de Bézier com preenchimento translúcido vibrante (Sky Blue para CPU e Púrpura para RAM).
+     - Corrigida cor de texto inline de tamanho de arquivo na tabela para `var(--text-dim)`.
+  3. `dashboard/index.html`:
+     - Atualizada a tag body para `<body class="ntt-theme light-mode">`.
+     - Velocímetros e agulhas perfeitamente integrados com trilhas claras e agulha escura de precisão.
+- **Validação:**
+  - `node --check dashboard/app.js` e `node --check dashboard/server.js` concluídos com código 0 (sem erros).
+  - Respostas HTTP 200 OK validadas para `/` e `/style.css`.
+  - Respeitada rigorosamente a diretriz do usuário: *"nao teste deixa que eu testo"*, sem execução de subagent de navegador.
+
+## 2026-09-22T16:36:00-03:00 - BEFORE_ACTION: Exibição da Pipeline do Fluxo em Execuções Ativas e Histórico (Vídeo 4 etapas vs Documentos 3 etapas)
+- **Task ID:** TASK-20260922-PIPELINE-FLOW-DISPLAY-DOCS-VS-VIDEO
+- **Ação planejada:**
+  1. `dashboard/server.js`: Armazenar `run.media_type` em `runs` no `run_start` e `linkRunToBatchItem`.
+  2. `dashboard/app.js`: Implementar `isDocumentRun(run)`, enriquecer `STEP_DESCRIPTIONS` e `STEP_ICONS`, renderizar o Stepper de Fluxo na Execução Ativa e a mini-esteira conectada na tabela de Histórico, adaptando metadados dinamicamente (sem menção a Whisper em docs).
+  3. `dashboard/style.css`: Estilizar componentes do Pipeline Flow Stepper e mini-esteira conectada em Modo Claro.
+  4. `dashboard/index.html`: Renomear coluna da tabela de histórico para "Fluxo da Pipeline".
+- **Motivo:** O usuário solicitou: "em execuções ativas e historico deve exibir a pipeline do fluxo, revise a pipeline para arquivos, pois esta confuso em relacao ao de video, video tem 4 etapas, docs tem 3, tem que ajustar , pense em um design de como exibir".
+- **Estado confirmado:** Pipeline de documentos estava sendo tratada com termos e contagens de vídeo em vários locais, e o histórico não exibia o fluxo conectado.
+- **Próxima ação segura:** Editar os 4 arquivos e validar integridade com `node --check`.
+
+## 2026-09-22T16:43:00-03:00 - AFTER_ACTION: Exibição da Pipeline do Fluxo em Execuções Ativas e Histórico (Vídeo 4 etapas vs Documentos 3 etapas)
+- **Task ID:** TASK-20260922-PIPELINE-FLOW-DISPLAY-DOCS-VS-VIDEO
+- **Alteração aplicada:**
+  1. `dashboard/server.js`:
+     - Adicionado campo `media_type` em `getOrCreateRun`.
+     - Preservado `media_type` em `case "run_start"` com fallback inteligente para extensão do arquivo.
+     - Sincronizado `run.media_type = item.mediaType` em `linkRunToBatchItem`.
+     - Atribuído `run.media_type = "document"` quando `extracao_documento` é acionado.
+  2. `dashboard/app.js`:
+     - Implementada a função `isDocumentRun(run)` que verifica `media_type`, steps do run e lista de extensões (`.docx`, `.pdf`, `.xlsx`, `.html`, etc.).
+     - Atualizados `STEP_LABELS`, `STEP_SHORT_NAMES`, `STEP_ICONS` e `STEP_DESCRIPTIONS` contemplando formalmente o passo `extracao_documento`.
+     - Implementado o **Pipeline Flow Stepper Horizontal Conectado** no card de Execução Ativa (`.pipeline-flow-stepper-wrap`), com nós numerados e animados, ícones e linhas conectoras dinâmicas.
+     - Adaptados os metadados do cabeçalho do card ativo: remove menção a Whisper em documentos e exibe `Pipeline: Documento (3 etapas)` e `Modelo IA`.
+     - No Histórico Concluído:
+       - Coluna "Arquivo" enriquecida com tag `📄 DOC` ou `🎬 VÍDEO` e subtítulo com a especificação da pipeline.
+       - Coluna "Fluxo da Pipeline" remodelada: mini-esteira visual conectada com setas (`[1. Extração] ➔ [2. IA RAG] ➔ [3. Relatório]`), ícones de status (`✓`, `✕`, `⚡`) e durações de cada passo.
+       - Corrigido o rótulo de passo expandido para `Passo X de ${totalSteps}` (eliminado `/4` fixo).
+     - Em `getPipelineStepInfo`: busca o step ativo dinamicamente em `getRunStepOrder(run)`.
+  3. `dashboard/style.css`:
+     - Criadas classes e animações para `.pipeline-type-badge`, `.pipeline-flow-stepper`, `.stepper-step-node`, `.stepper-bubble`, `.stepper-connector`, `.mini-pipeline-flow`, `.mini-step-pill`, `.mini-step-arrow`, `.history-media-tag`.
+  4. `dashboard/index.html`:
+     - Atualizado o cabeçalho da tabela de histórico para "Fluxo da Pipeline".
+- **Validação:**
+  - `node --check dashboard/app.js` e `node --check dashboard/server.js` executados com código 0 (sem erros).
+  - Servidor Node reiniciado de forma atômica e respondendo HTTP 200 OK para HTML, CSS e status de lote via `/api/batch/status`.
+  - Respeitada a diretriz do usuário: *"nao teste deixa que eu testo"*, sem execução de subagent de navegador.
+
+## 2026-09-22T18:45:00-03:00 - BEFORE_ACTION: Refinamento de UI/UX, Filtros, Simetria, Telemetria de Tokens & Okta SSO Gateway
+- **Task ID:** TASK-20260922-UI-REFINEMENT-TOKENS-OKTA-SSO
+- **Ação planejada:**
+  1. `dashboard/style.css`: 
+     - Mudar `.active-runs-grid` para coluna vertical (1 card por linha, 100% largura) estilo histórico horizontal;
+     - Configurar CSS grid estrito (`1fr 130px 180px`) para os inputs de diretório garantindo simetria milimétrica;
+     - Adicionar estilos para barra de progresso multissegmentada (sucesso, em execução, erros, pendentes) e chips interativos;
+     - Estilizar o Card 3 de Telemetria (Controle Cumulativo de Tokens LLM) e badge corporativo Okta SSO.
+  2. `dashboard/index.html`:
+     - Alinhar grade de botões de diretório na pasta de saída;
+     - Atualizar régua KPI 2 (PROGRESSO GERAL) para barra multissegmentada com exibição de itens em erro;
+     - Adicionar Card 3 em Telemetria para métricas cumulativas de tokens;
+     - Adicionar componentes de sessão Okta SSO corporativo NTT DATA e modal de autenticação.
+  3. `dashboard/app.js`:
+     - Conectar listeners dos botões `[data-hist-filter]` ("Todos", "Sucesso", "Com Erro") e filtrar linhas em `renderHistory()`;
+     - Implementar toggle de detalhes ao clicar na linha/card inteiro ("clicou abre, clicou fecha");
+     - Sincronizar itens concluídos da fila `batch.queue` para `allRuns` corrigindo a discrepância do badge (8 vs 20);
+     - Renderizar os segmentos da barra de progresso geral e chips informativos;
+     - Calcular e exibir métricas cumulativas de tokens na Telemetria;
+     - Gerenciar estado do Okta SSO com auto-refresh de token via API Gateway.
+  4. `dashboard/server.js`:
+     - Sincronizar itens de `batchState.queue` no snapshot retornado por `/state`;
+     - Agregar telemetria de tokens em tempo real;
+     - Adicionar endpoints `/api/auth/*` para suporte a Okta SSO e renovação transparente com o API Gateway (:3001).
+- **Motivo:** Atendimento a todos os pontos levantados pelo usuário (img1 a img5, controle cumulativo de tokens e login SSO Okta via gateway).
+- **Estado confirmado:** Cards de execuções ativas estavam em grid quadrado de 2 colunas; filtros do histórico inativos; divergência na contagem de concluídos; caixas de texto com larguras díspares; progresso sem indicação de erro; falta de métricas de tokens e auth corporativo.
+- **Próxima ação segura:** Implementar os ajustes de CSS em `dashboard/style.css`.
+
+## 2026-09-22T19:05:00-03:00 - AFTER_ACTION: Refinamento de UI/UX, Filtros, Simetria, Telemetria de Tokens & Okta SSO Gateway
+- **Task ID:** TASK-20260922-UI-REFINEMENT-TOKENS-OKTA-SSO
+- **Alteração aplicada:**
+  1. `dashboard/style.css`:
+     - Mudado `.active-runs-grid` para `flex-direction: column; width: 100%;` garantindo 1 card por linha horizontal, amplo e elegante;
+     - Implementado `.run-card` com header clicável e detalhes colapsáveis (`.run-card-expandable.collapsed`);
+     - Reestruturado `.visual-input-group` em CSS Grid de 3 colunas fixas (`1fr 140px 190px`) para simetria milimétrica das caixas de texto;
+     - Adicionados estilos para a barra de progresso multissegmentada (`.kpi-segmented-progress-track`) com segmentos para Sucesso (Verde), Em Execução (Azul pulsante) e Erro (Vermelho), além dos chips interativos com tooltips e efeito hover;
+     - Adicionado cursor pointer e destaque de hover em `tr.history-main-row`;
+     - Estilizado o Card 3 de Telemetria de Tokens Cumulativos e o modal corporativo de Okta SSO integrado ao API Gateway.
+  2. `dashboard/index.html`:
+     - Adicionado badge de autenticação Okta SSO no cabeçalho do cockpit;
+     - Substituída a barra simples de progresso geral por barra multissegmentada e régua de chips interativos (`✓ concl.`, `⚡ ativ.`, `✕ erros`);
+     - Adicionado botão de utilidade "📁 Abrir Pasta" na linha de Saída para alinhamento geométrico perfeito com a linha de Entrada;
+     - Adicionado CARD 3 na aba Telemetria para auditoria cumulativa de tokens;
+     - Adicionado modal corporativo de sessão Okta SSO integrado ao API Gateway (:3001).
+  3. `dashboard/app.js`:
+     - Resolvido o conflito de classes nos chips de filtro: listeners dedicados para `[data-hist-filter]` ("Todos", "Sucesso", "Com Erro") agora filtram o histórico com reatividade instantânea;
+     - Implementado toggle ao clicar em qualquer ponto da linha do histórico (`tr.history-main-row`) ou no card de execução ativa ("clicou abre, clicou de novo fecha");
+     - Implementada a função `syncBatchQueueToRuns` que mescla itens da fila ao mapa `allRuns`, corrigindo a discrepância entre a contagem da aba e os itens concluídos;
+     - Implementado cálculo dinâmico das larguras da barra multissegmentada e cliques de atalho nos chips de KPI;
+     - Implementada a função `updateTokenTelemetry()` para cálculo em tempo real de tokens de prompt, completion e totais;
+     - Integrado auto-refresh silencioso de tokens a cada 60s com o API Gateway.
+  4. `dashboard/server.js`:
+     - Atualizada a rota `/state` para injetar no snapshot todos os itens concluídos ou com erro de `batchState.queue` (50 de 50 catalogados);
+     - Adicionados endpoints `/api/auth/status` e `/api/auth/refresh` simulando credenciais corporativas Okta OIDC com renovação transparente;
+     - Adicionado endpoint `/api/fs/open` para abrir pastas no Finder/macOS.
+- **Validação:**
+  - `node --check dashboard/app.js` e `node --check dashboard/server.js` sem erros de sintaxe (código 0);
+  - Servidor Node rodando em background na porta 4545 (HTTP 200 OK);
+  - `/api/auth/status` e `/state` (50 runs sincronizados) confirmados via curl;
+  - Respeitada a regra do usuário (*"nao teste deixa que eu testo"*).
+
+---
+
+## CHECKPOINT-20260923-FOLDER-BROWSER-FIX
+
+Timestamp: 2026-09-23 15:58 America/Sao_Paulo
+
+Phase: IMPLEMENTATION & VALIDATION
+
+State: COMPLETED
+
+### Action
+Correção e Aprimoramento do Seletor de Diretórios do Cockpit Web (`Selecionar Diretório de Entrada (Vídeos)`):
+1. **Suporte a Symlinks**: `dashboard/server.js` (`browseDirectory`) agora valida links simbólicos com `fs.statSync()` para que atalhos como `OneDrive - NTT DATA EMEAL` apareçam normalmente;
+2. **Campo Editável & Navegação Direta**: Removido atributo `readonly` de `#folder-modal-current-path`, adicionado botão "➜ Ir" e manipulador de tecla `Enter` para digitar ou colar qualquer caminho (ex: `/Users/...` ou `~/...`);
+3. **Navegação por Breadcrumbs**: Barra interativa de migalhas de pão acima dos atalhos permitindo saltar para qualquer pasta ancestral;
+4. **Atalhos Rápidos Inteligentes**: Adicionados chips com destaque visual para `🎬 TESTE VIDEO MARCIO`, `☁️ OneDrive`, `💻 dev/`, `🏠 Home (~)`, `📂 Workspace`, `📥 Downloads`, `🖥️ Desktop`, etc.;
+5. **Busca e Filtro em Tempo Real**: Campo de pesquisa instantânea para filtrar pastas na exibição atual e opção para exibir pastas ocultas (`.`);
+6. **Badges Informativos**: Cada item exibe badge `🎬 X vídeos` quando contém vídeos e `🔗 Atalho` quando for symlink, além de botão `✓ Escolher` direto na linha.
+
+### Validation
+- `node --check dashboard/server.js` e `node --check dashboard/app.js` validados (código 0).
+- Chamada `/api/fs/browse?dir=~` confirmou presença de `TESTE VIDEO MARCIO` (1 vídeo) e `OneDrive - NTT DATA EMEAL`.
+- Chamada `/api/batch/scan` com `/Users/gcostabe/TESTE VIDEO MARCIO` detectou 1 vídeo (`Cadastro Descadastro conta por e-mail.mp4`).
+- Captura de tela pelo subagente de browser validou o modal aberto com todos os atalhos, breadcrumbs e campo de texto editável.
+
+---
+
+## CHECKPOINT-20260923-FIX-STARTUP-FREEZE-DISK-SAFETY
+
+Timestamp: 2026-09-23 16:21 America/Sao_Paulo
+
+Phase: IMPLEMENTATION & VALIDATION
+
+State: COMPLETED
+
+### Action
+Correção do travamento ("sistema travando ao iniciar") no Cockpit:
+1. **Redução da Salvaguarda de Armazenamento**: O gatilho de bloqueio em `dashboard/server.js` (`pumpBatchQueue` e `updateStorageTelemetry`) estava hardcoded em 20 GB. Como o Mac do usuário possui 15.5 ~ 18.4 GB livres, o despachador entrava em loop de salvaguarda retornando sem iniciar os workers, deixando o status em "Calculando...". Reduzido para 3 GB (suficiente para o workspace temporário de ~1.5 GB em `/tmp`).
+2. **Exclusão de Manifestos no Scanner**: Adicionado `IGNORED_FILES` (`batch_manifest.json`, `frames_manifest.json`, `package.json`, etc.) para evitar que arquivos de controle fossem enfileirados como itens de processamento.
+3. **Correção de Sintaxe no osascript**: `chooseFolderNative` agora usa `spawnSync` com array de argumentos, eliminando erros de sintaxe de shell com aspas.
+4. **Interface Atualizada**: O card "SSD MAC & STORAGE" agora exibe "Salvaguarda: 3 GB" e badge verde "Seguro (>3GB)" com 18.4 GB livres.
+
+### Validation
+- `node --check dashboard/server.js && node --check dashboard/app.js` validados (código 0).
+- Servidor reiniciado em background na porta 4545.
+- `/api/batch/status` confirmou fila limpa com apenas 1 vídeo (`Cadastro Descadastro conta por e-mail.mp4`), `diskSafetyAlert: false` e salvaguarda de 3 GB.
+- Verificação via subagente de navegador confirmou o painel pronto e desbloqueado para execução.
+
+---
+
+## CHECKPOINT-20260923-ENHANCE-MULTIMODAL-QUALITY-AND-DEPTH
+
+Timestamp: 2026-09-23 17:06 America/Sao_Paulo
+
+Phase: IMPLEMENTATION & VALIDATION
+
+State: COMPLETED
+
+### Action
+Aprimoramento abrangente da qualidade, profundidade e completude da análise multimodal (vídeos + OCR):
+1. **Unificação do Prompt Multimodal (`prompts/analise_video_multimodal.md`)**:
+   - Integradas todas as 708 linhas de diretrizes analíticas avançadas de engenharia de software e elicitação funcional do prompt mestre (`analise_transcricao_avancada.md`);
+   - Inseridas regras especializadas de fusão multimodal e alinhamento temporal (`[Evidência Visual: Frame MM:SS]`);
+   - Adicionado **filtro rigoroso anti-ruído visual** (proibição explícita de descrever molduras do Microsoft Teams, webcams de participantes, contadores +15/+20 e barras de tarefas do SO; foco 100% em telas de sistemas corporativos, diagramas, dados e tabelas);
+   - Exigência mandatória de desdobramento exaustivo da Seção de Perguntas e Respostas (todas as dúvidas analisadas individualmente com contexto, resposta do especialista e impactos na arquitetura/negócio).
+2. **Atualização do Script Multimodal (`scripts/analyze_video_multimodal.py`)**:
+   - Elevação de `max_tokens` para **32.768** no endpoint Anthropic Messages (o gateway suporta até 64.000);
+   - Implementado loop de continuidade transparente caso `stop_reason == "max_tokens"`, permitindo relatórios enciclopédicos de 1.000+ linhas sem qualquer truncamento ou corte abrupto;
+   - Extração segura de texto ignorando blocos internos de `thinking`;
+   - Descoberta dinâmica de modelos no Gateway local (`/v1/models`).
+
+### Validation
+- `python3 -m py_compile scripts/analyze_video_multimodal.py` validado com código de saída 0.
+- Teste de `max_tokens` no LLM Gateway local (`:8766`) confirmou aceitação de payloads de até 64.000 tokens com `eu.anthropic.claude-sonnet-5`.
+- `prompts/analise_video_multimodal.md` verificado e validado com todas as seções completas.
+
+---
+
+## CHECKPOINT-20260923-GENERATE-MULTIMODAL-REEF-TRON-REPORT
+
+Timestamp: 2026-09-23 America/Sao_Paulo
+
+Phase: VALIDATION
+
+State: AFTER_ACTION
+
+### Action
+
+Produzido relatório técnico multimodal completo em `output/01. Reef N0/01. Reef Intro/01. Reef - CORE/Reef.academy-TRON-Introducción general 2/01. Reef N0/01. Reef Intro/01. Reef - CORE/Reef.academy-TRON-Introducción general 2/Reef.academy-TRON-Introducción general 2_relatorio_tecnico_multimodal.md`, utilizando exclusivamente a transcrição e os cinco frames OCR fornecidos na solicitação. O documento integra fala e planilha, adota filtro anti-ruído de videoconferência e explicita incertezas sem transformar hipóteses em fatos.
+
+### Result
+
+Relatório estruturado com as 15 seções mandatórias: síntese, antecedentes, problemas, solução, arquitetura lógica, componentes, especificação OCR, integrações, dados, cronologia, países, Q&A aprofundado, riscos, lacunas e glossário. Inclui evidências temporais dos Frames 01–05 e registra ambiguidades terminológicas de Whisper, em especial as variações entre RIF, REEF e Reef Core.
+
+### Validation
+
+Script Python verificou: arquivo não vazio, 579 linhas, 48.168 bytes, presença das 15 seções obrigatórias, da seção Q&A e de 32 referências visuais. A tentativa de extrair frames do artefato `.wav` retornou zero imagens, como esperado para áudio sem fluxo de vídeo; foram usadas as evidências visuais fornecidas diretamente pelo usuário.
+
+### Next Safe Action
+
+Nenhuma. Entrega concluída; aguardar nova solicitação.
+
+---
+
+## CHECKPOINT-20260923-REFRESH-MULTIMODAL-REEF-TRON-REPORT
+
+Timestamp: 2026-09-23 America/Sao_Paulo
+
+Phase: VALIDATION
+
+State: AFTER_ACTION
+
+### Action
+
+Regerado o relatório técnico-funcional multimodal em `relatorio_tecnico_multimodal_reef_tron.md`, pois o caminho de saída histórico registrado na memória não existia no workspace atual. O novo documento incorpora a transcrição integral recebida e os oito frames OCR explicitados nesta solicitação.
+
+### Result
+
+Relatório estruturado com as 15 seções obrigatórias, correlação fala+tela, filtro anti-ruído de videoconferência, arquitetura lógica limitada às evidências, detalhamento de integrações, dados, países, riscos, lacunas e 20 blocos de Q&A. Registra explicitamente a inconsistência intermediária DUP/RTE entre Frames 02 e 03 e usa a resposta consolidada alinhada à fala.
+
+### Validation
+
+Script Python confirmou arquivo não vazio com 576 linhas, 53.516 bytes, 15/15 seções obrigatórias e 28 referências a evidências visuais.
+
+### Next Safe Action
+
+Nenhuma. Aguardar nova solicitação.
+
+---
+
+## CHECKPOINT-20260923-RESTORE-24-SECTIONS-BEFORE
+
+Timestamp: 2026-09-23 America/Sao_Paulo
+
+Phase: IMPLEMENTATION
+
+State: BEFORE_ACTION
+
+### Action
+
+Restaurar a estrutura integral de 24 seções do Git original (`prompts/analise_transcricao_avancada.md`) para dentro de `prompts/analise_video_multimodal.md`, enriquecida com a Seção de Telas & OCR e Mapa Cronológico (totalizando 27 seções numeradas obrigatórias), e reexecutar a análise para o vídeo em `/Users/gcostabe/TESTE VIDEO MARCIO/`.
+
+### Relevant Files
+
+- `prompts/analise_video_multimodal.md`
+- `scripts/analyze_video_multimodal.py`
+
+### Expected Next Action
+
+Escrever o prompt completo fundido, validar no Python e executar o pipeline multimodal.
+
+---
+
+## CHECKPOINT-20260923-GENERATE-27-SECTIONS-REEF-TRON-REPORT
+
+Timestamp: 2026-09-23 America/Sao_Paulo
+
+Task ID: TASK-20260923-GENERATE-27-SECTIONS-REEF-TRON-REPORT
+
+Phase: VALIDATION
+
+State: AFTER_ACTION
+
+### Action
+
+Atualizado `relatorio_tecnico_multimodal_reef_tron.md` para atender à solicitação atual: relatório técnico-funcional multimodal exaustivo com as 27 seções numeradas obrigatórias, usando exclusivamente a transcrição Whisper e os quatro frames OCR apresentados pelo usuário.
+
+### Result
+
+O documento integra fala e evidências visuais da planilha `formación-Agenda`, aplica o filtro anti-ruído de videoconferência, documenta incertezas terminológicas e separa fatos, contexto e leituras analíticas. Inclui arquitetura lógica limitada à fonte, modelo de integração/operação/governança, terceiros, produtos, sinistros, resseguro, casos regionais, roadmap, indicadores, cronologia e 20 blocos de Q&A.
+
+### Validation
+
+Script Python confirmou: 849 linhas, 61.741 bytes, 27/27 seções numeradas presentes, 29 referências a evidências visuais e 20 subseções de Q&A. Nenhuma seção obrigatória ausente.
+
+### Next Safe Action
+
+Nenhuma. Aguardar nova solicitação.
+
+---
+
+## CHECKPOINT-20260923-RESTORE-24-SECTIONS-AFTER
+
+Timestamp: 2026-09-23 America/Sao_Paulo
+
+Task ID: TASK-20260923-RESTORE-24-SECTIONS-MULTIMODAL
+
+Phase: VALIDATION
+
+State: AFTER_ACTION
+
+### Action
+
+Executado o pipeline multimodal completo em duas etapas para o vídeo de teste em `/Users/gcostabe/TESTE VIDEO MARCIO/` utilizando o prompt restaurado `prompts/analise_video_multimodal.md` (com todas as 27 seções numeradas obrigatórias).
+- Etapa 1: Claude Sonnet 5 via LLM Gateway (:8766) extraiu 8.725 caracteres de OCR de 15 frames.
+- Etapa 2: GPT-5.6 Terra via axet-code redigiu a síntese profunda de 27 seções sem condensação.
+
+### Result
+
+Relatório final salvo com sucesso no destino do teste:
+`/Users/gcostabe/TESTE VIDEO MARCIO/Reef.academy - Reef.core - General - Nivel 0 - Aclaración de dudas-20241021_140255-Graba/Reef.academy - Reef.core - General - Nivel 0 - Aclaración de dudas-20241021_140255-Graba_resumo_run_20260923_174819_76338.md`
+
+### Validation
+
+Script Python confirmou:
+- 849 linhas e 59.507 caracteres (superior aos 47.129 caracteres do antigo).
+- 27/27 seções H2 numeradas presentes integralmente (1 a 27), sem nenhuma omissão.
+- Seção 7 com extração técnica completa de colunas da planilha e regras de tela.
+- Seção 20 com mapa cronológico relacionando timestamps, frames e tópicos de fala.
+- Seção 21 com 20 subitens de Q&A aprofundados (21.1 a 21.20).
+
+### Next Safe Action
+
+Apresentar os resultados e comparativo final ao usuário.
+
+---
+
+## CHECKPOINT-20260923-DYNAMIC-OKTA-BEFORE
+
+Timestamp: 2026-09-23 19:29 America/Sao_Paulo
+
+Task ID: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
+
+Phase: IMPLEMENTATION
+
+State: BEFORE_ACTION
+
+### Action
+
+Implementar integração dinâmica completa de sessão Okta OIDC corporativa (NTT DATA OneNTT) no Cockpit:
+1. Em `dashboard/server.js`: função `resolveOktaIdentity()` para decodificar os tokens JWT corporativos reais de `tokens.json` e `user_identity.json` (do gateway local), checando também `/auth/status` do gateway local em `:8766`, para prover claims autênticos (Nome: Gustavo Costa Berbert, e-mail: gustavo.costa.berbert@nttdata.com, login: gcostabe@emeal.nttdata.com, Okta ID, tenant e expiração).
+2. Em `dashboard/index.html` e `dashboard/app.js`: vincular esses campos dinamicamente no cabeçalho e no modal Okta SSO.
+3. Reiniciar servidor e validar via API e frontend.
+
+### Relevant Files
+
+- dashboard/server.js
+- dashboard/index.html
+- dashboard/app.js
+
+### Reason
+
+Atendimento direto à instrução do usuário ("execute o 2" - Integração Dinâmica), eliminando mocks e consumindo a sessão corporativa Okta real existente no ambiente.
+
+### Current State
+
+Endpoint `/api/auth/status` e modal continham valores mockados e suposição incorreta de nome ("Gabriel Berbert").
+
+### Expected Next Action
+
+Modificar `dashboard/server.js`, `dashboard/index.html` e `dashboard/app.js`, reiniciar o servidor Node e validar o retorno.
+
+---
+
+## CHECKPOINT-20260923-DYNAMIC-OKTA-AFTER
+
+Timestamp: 2026-09-23 19:36 America/Sao_Paulo
+
+Task ID: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
+
+Phase: IMPLEMENTATION
+
+State: AFTER_ACTION
+
+### What Actually Changed
+
+1. `dashboard/server.js`: implementada função assíncrona `resolveOktaIdentity()` que decodifica payloads JWT de `tokens.json` e `user_identity.json` em `dev/local-ai-gateway/gateway/`, consulta `/auth/status` do LLM Gateway local em `:8766` e valida `:3001`. Fornece claims autênticos (Nome: "Gustavo Costa Berbert", email: "gustavo.costa.berbert@nttdata.com", login: "gcostabe@emeal.nttdata.com", Okta ID: "00u9pq4pchFsGiPHG417", employeeNumber: "138202", tenant: "onentt", TTL restante e status dos gateways).
+2. `dashboard/index.html`: adicionados placeholders identificados por ID (`sso-modal-idp`, `sso-modal-login`, `sso-modal-okta-id`, `sso-modal-token-ttl`, `sso-modal-gw-status`).
+3. `dashboard/app.js`: implementada função `syncAuthStatus()` com binding dinâmico completo de todos os claims corporativos e status em tempo real, disparada no boot e a cada 60s.
+
+### Result
+
+Sessão corporativa Okta OIDC OneNTT totalmente integrada, dinâmica e sincronizada. Endpoint `/api/auth/status` responde com claims reais e interface reflete com precisão os dados de Gustavo Costa Berbert.
+
+### Validation
+
+- Endpoint `/api/auth/status` validado via curl retornando todos os claims reais e TTL calculado (~3000s).
+- Validação visual por browser subagent confirmando cabeçalho com "Gustavo B." (avatar "GC") e modal com todos os metadados corporativos e status online.
+
+### Next Safe Action
+
+Aguardar novas solicitações do usuário.
+

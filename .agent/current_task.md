@@ -1,31 +1,39 @@
-# TAREFA ATUAL: Diagnóstico, Correção e Conclusão de 100% dos Documentos Corporativos
+# TAREFA: Integração Dinâmica de Identidade Okta SSO & Gateway
 
-- **Task ID**: TASK-20260922-PDF-PROCESSING-100-PERCENT
-- **Status**: CONCLUIDO
-- **Data/Hora**: 2026-09-22T10:19:47.709619
+- **Task ID**: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
+- **Status**: COMPLETED
+- **Phase**: VERIFICATION
+- **Data/Hora**: 2026-09-23 19:36 America/Sao_Paulo
 - **Workspace**: /Users/gcostabe/dev/AGENTE-CONTEXT-GEN
 
-## Objetivo
+## Entrega
 
-Diagnosticar falhas residuais de processamento nos documentos corporativos (PDFs e PPTX), implementar proteções para documentos sem camada de texto e garantir que 100% da fila seja concluída com relatórios RAG salvos no OneDrive.
+1. **Backend (`dashboard/server.js`)**:
+   - Implementado resolvedor dinâmico assíncrono `resolveOktaIdentity()` que decodifica o payload do token JWT de `tokens.json` e consome `user_identity.json` do gateway corporativo local (`/Users/gcostabe/dev/local-ai-gateway/gateway/`).
+   - Consulta em tempo real a integridade e tempo de expiração (`remaining_seconds`) no endpoint `/auth/status` do API Gateway local (`:8766`) e `:3001`.
+   - Claims autênticos extraídos e validados:
+     - Nome: **Gustavo Costa Berbert**
+     - E-mail corporativo: `gustavo.costa.berbert@nttdata.com`
+     - Login: `gcostabe@emeal.nttdata.com`
+     - Okta User ID: `00u9pq4pchFsGiPHG417`
+     - Employee Number: `138202`
+     - Tenant: `onentt`
+     - Região: `emeal-onentt`
+     - Organização: `NTT DATA EMEAL`
+     - Status do Token / Expiração real sincronizada.
 
-## Diagnóstico Realizado
+2. **Frontend (`dashboard/index.html` e `dashboard/app.js`)**:
+   - No modal e no cabeçalho: substituído qualquer valor estático por elementos dinâmicos vinculados via `syncAuthStatus()`.
+   - Inicialização imediata na carga da página e auto-sincronização a cada 60s em background.
+   - Botão "Sincronizar Sessão" com feedback visual ("✓ Sessão Sincronizada").
+   - Avatar com iniciais "GB" e cabeçalho com "Gustavo B.".
 
-1. **Arquivos PDF sem texto/imagens (6 itens de 1.140 bytes)**:
-   - Os arquivos eram folhas em branco geradas por exportação do Chrome Print/Skia (`about:blank` ou página sem dados).
-   - O parser extraía 0 caracteres e colocava `[Página em branco ou apenas elementos visuais/imagem]`.
-   - Ao receber esse texto com prompt anti-alucinação, o modelo respondia que não havia conteúdo para analisar, gerando respostas curtas rejeitadas pelo validador.
-2. **Apresentação PPTX massiva (79 slides, 127 KB de texto)**:
-   - O modelo LLM emitia uma resposta curta em chat ("Relatório gerado em...") em vez de emitir todo o documento de 45 KB diretamente no stdout.
+## Validação
 
-## Correções Implementadas
+- `curl -s http://localhost:4545/api/auth/status` validado com resposta 200 OK contendo todos os claims e TTL restante.
+- `curl -s -X POST http://localhost:4545/api/auth/refresh` validado.
+- Browser test via subagente com captura de screenshot (`okta_sso_modal_verified_1790202907026.png`) confirmando renderização impecável.
 
-1. **Detecção e Tratamento Automático de Documentos em Branco (`extract_document.py` e `process_document.sh`)**:
-   - `extract_document.py` identifica arquivos com 0 caracteres e 0 imagens e sinaliza `is_blank: true`.
-   - `process_document.sh` gera instantaneamente um relatório formal de placeholder no OneDrive, mantendo rastreabilidade total sem despachar chamadas inúteis ao LLM.
-2. **Regra Mandatória de Emissão de Saída no Prompt (`prompts/analise_documento_rag.md`)**:
-   - Forçada a emissão imediata e integral do Markdown via stdout começando obrigatoriamente com `# `, impedindo confirmações curtas de chat.
-   - O PPTX de 79 slides foi reprocessado com sucesso, gerando um relatório RAG completo de 44.9 KB no OneDrive.
-3. **Cockpit UI & Telemetria (`server.js`, `index.html`, `app.js`)**:
-   - Botão dinâmico "Reenfileirar Falhas" implementado.
-   - Estado final recarregado: 2.054 de 2.054 documentos concluídos (100%), 0 erros, 0 pendentes.
+## Próxima Ação Segura
+
+Aguardar novas orientações do usuário.

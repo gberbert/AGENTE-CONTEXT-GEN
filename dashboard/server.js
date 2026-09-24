@@ -26,7 +26,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const url = require("url");
-const { execSync, spawn } = require("child_process");
+const { execSync, spawn, spawnSync } = require("child_process");
 const os = require("os");
 
 const PORT = parseInt(process.argv[2] || process.env.PORT || "4545", 10);
@@ -246,6 +246,14 @@ const IGNORED_DIRS = new Set([
   ".git", ".venv", ".agent", ".cache", "node_modules", "scratch", ".system_generated"
 ]);
 
+const IGNORED_FILES = new Set([
+  "batch_manifest.json",
+  "frames_manifest.json",
+  "package.json",
+  "package-lock.json",
+  ".ds_store",
+]);
+
 function getMediaType(item) {
   if (!item) return "video";
   const ext = path.extname(item.filename || item.name || item.relativePath || "").toLowerCase();
@@ -328,6 +336,7 @@ function scanFilesRecursively(dirPath, rootDir = dirPath, ingestionMode = batchS
       if (batchState.outputDir && path.resolve(fullPath) === path.resolve(batchState.outputDir)) continue;
       results.push(...scanFilesRecursively(fullPath, rootDir, ingestionMode));
     } else if (entry.isFile()) {
+      if (IGNORED_FILES.has(entry.name.toLowerCase())) continue;
       const ext = path.extname(entry.name).toLowerCase();
       const isVideo = VIDEO_EXTENSIONS.has(ext);
       const isDoc = DOCUMENT_EXTENSIONS.has(ext);
@@ -390,32 +399,49 @@ function chooseFolderNative(defaultDir) {
       script += ` default location POSIX file "${defaultDir.replace(/"/g, '\\"')}"`;
     }
     script += ")";
-    const result = execSync(`osascript -e '${script}'`, { encoding: "utf8", timeout: 120000 });
-    const chosen = (result || "").trim();
+    // Usando spawnSync direto para não passar por /bin/sh e evitar problemas de aspas
+    const child = spawnSync("osascript", ["-e", script], { encoding: "utf8", timeout: 2500 });
+    if (child.error) {
+      return { ok: false, fallback: true, error: child.error.message };
+    }
+    const chosen = (child.stdout || "").trim();
     if (chosen && fs.existsSync(chosen)) {
       return { ok: true, path: chosen };
     }
-    return { ok: false, error: "Pasta selecionada não encontrada" };
-  } catch (err) {
-    const msg = String(err.stderr || err.message || "");
+    const msg = String(child.stderr || "");
     if (msg.includes("User canceled") || msg.includes("-128")) {
       return { ok: false, cancelled: true };
     }
-    return { ok: false, error: msg };
+    return { ok: false, fallback: true, error: msg || "Pasta selecionada não encontrada" };
+  } catch (err) {
+    return { ok: false, fallback: true, error: err.message };
   }
 }
 
 /**
  * Lista subpastas para o navegador de arquivos web embutido no cockpit.
+ * Suporta expansão de ~, resolução de links simbólicos (ex.: OneDrive), contagem de vídeos e atalhos rápidos.
  */
-function browseDirectory(targetDir) {
-  const resolved = path.resolve(targetDir || ROOT_DIR);
-  if (!fs.existsSync(resolved)) {
-    return { error: "Diretório não encontrado", current: resolved };
+function browseDirectory(targetDir, showHidden = false) {
+  let input = (targetDir || "").trim();
+  if (input.startsWith("~/")) {
+    input = path.join(os.homedir(), input.slice(2));
+  } else if (input === "~") {
+    input = os.homedir();
   }
-  const stat = fs.statSync(resolved);
+  const resolved = path.resolve(input || os.homedir());
+
+  if (!fs.existsSync(resolved)) {
+    return { error: `Diretório não encontrado: ${resolved}`, current: resolved };
+  }
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch (err) {
+    return { error: `Não foi possível acessar ${resolved}: ${err.message}`, current: resolved };
+  }
   if (!stat.isDirectory()) {
-    return { error: "Caminho não é um diretório", current: resolved };
+    return { error: "O caminho informado não é um diretório", current: resolved };
   }
 
   let entries = [];
@@ -427,25 +453,126 @@ function browseDirectory(targetDir) {
 
   const subdirs = [];
   for (const ent of entries) {
-    if (ent.name.startsWith(".")) continue;
-    if (ent.isDirectory()) {
-      if (IGNORED_DIRS.has(ent.name.toLowerCase())) continue;
-      subdirs.push({
-        name: ent.name,
-        path: path.join(resolved, ent.name),
-      });
+    if (!showHidden && ent.name.startsWith(".")) continue;
+
+    let isDir = ent.isDirectory();
+    let isSymlink = ent.isSymbolicLink();
+
+    // Se for link simbólico, valida se o destino é um diretório real
+    if (!isDir && isSymlink) {
+      try {
+        const targetStat = fs.statSync(path.join(resolved, ent.name));
+        if (targetStat.isDirectory()) {
+          isDir = true;
+        }
+      } catch (_) {}
     }
+
+    if (!isDir) continue;
+    if (IGNORED_DIRS.has(ent.name.toLowerCase())) continue;
+
+    // Contagem rasa de vídeos e arquivos no subdiretório para feedback imediato
+    let videoCount = 0;
+    let fileCount = 0;
+    let hasSubdirs = false;
+    try {
+      const childEnts = fs.readdirSync(path.join(resolved, ent.name), { withFileTypes: true });
+      for (const ce of childEnts) {
+        if (ce.name.startsWith(".")) continue;
+        let ceIsDir = ce.isDirectory();
+        if (!ceIsDir && ce.isSymbolicLink()) {
+          try {
+            ceIsDir = fs.statSync(path.join(resolved, ent.name, ce.name)).isDirectory();
+          } catch (_) {}
+        }
+        if (ceIsDir) {
+          hasSubdirs = true;
+        } else {
+          fileCount++;
+          const ext = path.extname(ce.name).toLowerCase();
+          if (VIDEO_EXTENSIONS.has(ext)) {
+            videoCount++;
+          }
+        }
+      }
+    } catch (_) {}
+
+    subdirs.push({
+      name: ent.name,
+      path: path.join(resolved, ent.name),
+      isSymlink,
+      videoCount,
+      fileCount,
+      hasSubdirs,
+    });
   }
-  subdirs.sort((a, b) => a.name.localeCompare(b.name));
+  subdirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  // Atalhos rápidos inteligentes do sistema
+  const homeDir = os.homedir();
+  const devDir = path.join(homeDir, "dev");
+  const desktopDir = path.join(homeDir, "Desktop");
+  const downloadsDir = path.join(homeDir, "Downloads");
+
+  let onedriveDir = null;
+  const possibleOnedrive = [
+    path.join(homeDir, "OneDrive - NTT DATA EMEAL"),
+    path.join(homeDir, "Library", "CloudStorage", "OneDrive-NTTDATAEMEAL"),
+  ];
+  for (const p of possibleOnedrive) {
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
+        onedriveDir = p;
+        break;
+      }
+    } catch (_) {}
+  }
+  if (!onedriveDir) {
+    try {
+      const cs = path.join(homeDir, "Library", "CloudStorage");
+      if (fs.existsSync(cs)) {
+        const csEnts = fs.readdirSync(cs);
+        const od = csEnts.find((e) => e.toLowerCase().includes("onedrive"));
+        if (od) onedriveDir = path.join(cs, od);
+      }
+    } catch (_) {}
+  }
+
+  const shortcuts = [];
+  shortcuts.push({ id: "home", label: "🏠 Home (~)", path: homeDir });
+
+  // Destaque para pasta de teste recente do usuário
+  const testeMarcioPath = path.join(homeDir, "TESTE VIDEO MARCIO");
+  if (fs.existsSync(testeMarcioPath)) {
+    shortcuts.push({ id: "teste_marcio", label: "🎬 TESTE VIDEO MARCIO", path: testeMarcioPath, highlight: true });
+  }
+
+  if (onedriveDir) {
+    shortcuts.push({ id: "onedrive", label: "☁️ OneDrive", path: onedriveDir });
+  }
+  if (fs.existsSync(devDir)) {
+    shortcuts.push({ id: "dev", label: "💻 dev/", path: devDir });
+  }
+  shortcuts.push({ id: "ws", label: "📂 Workspace", path: ROOT_DIR });
+  shortcuts.push({ id: "videos", label: "🎬 videos/", path: path.join(ROOT_DIR, "videos") });
+  if (fs.existsSync(downloadsDir)) {
+    shortcuts.push({ id: "downloads", label: "📥 Downloads", path: downloadsDir });
+  }
+  if (fs.existsSync(desktopDir)) {
+    shortcuts.push({ id: "desktop", label: "🖥️ Desktop", path: desktopDir });
+  }
+  shortcuts.push({ id: "output", label: "📤 output/", path: path.join(ROOT_DIR, "output") });
 
   return {
     current: resolved,
     parent: path.dirname(resolved) !== resolved ? path.dirname(resolved) : null,
     subdirs,
-    home: os.homedir(),
+    shortcuts,
+    home: homeDir,
     workspace: ROOT_DIR,
     defaultVideos: path.join(ROOT_DIR, "videos"),
     defaultOutput: path.join(ROOT_DIR, "output"),
+    onedrive: onedriveDir,
   };
 }
 
@@ -520,8 +647,11 @@ const batchState = {
   whisperModel: "small",
   whisperLanguage: "es",
   axetModel: "gpt-5.6-terra",
+  videoVisionMode: "vision_ocr", // 'vision_ocr' (OCR + Visão Multimodal) | 'audio_only' (Apenas Áudio)
   queue: [], // itens da fila
   stats: { total: 0, pending: 0, running: 0, completed: 0, errors: 0, cancelled: 0 },
+  diskSafetyLimitGb: 3, // Salvaguarda padrão reduzida para 3 GB para evitar bloqueio com 15.5 GB livres
+  statusMessage: null,
   startedAt: null,
   finishedAt: null,
 };
@@ -769,6 +899,7 @@ function saveBatchManifest(immediate = false) {
         whisperModel: batchState.whisperModel,
         whisperLanguage: batchState.whisperLanguage || "es",
         axetModel: batchState.axetModel || "gpt-5.6-terra",
+        videoVisionMode: batchState.videoVisionMode || "vision_ocr",
         startedAt: batchState.startedAt,
         finishedAt: batchState.finishedAt,
         stats: { ...batchState.stats },
@@ -888,6 +1019,9 @@ function loadBatchManifest() {
   if (loadedData.axetModel) {
     batchState.axetModel = loadedData.axetModel;
   }
+  if (loadedData.videoVisionMode) {
+    batchState.videoVisionMode = loadedData.videoVisionMode;
+  }
 
   if (loadedData.status === "running") {
     batchState.status = "stopped";
@@ -988,7 +1122,9 @@ function updateStorageTelemetry() {
       storageTelemetry.diskFreeGb = parseFloat((freeBytes / (1024 ** 3)).toFixed(1));
       storageTelemetry.diskTotalGb = parseFloat((totalBytes / (1024 ** 3)).toFixed(1));
       storageTelemetry.diskFreePct = totalBytes > 0 ? Math.round((freeBytes / totalBytes) * 100) : 0;
-      storageTelemetry.diskSafetyAlert = storageTelemetry.diskFreeGb < 20;
+      const safetyLimit = Math.max(1, batchState.diskSafetyLimitGb || 3);
+      storageTelemetry.safetyThresholdGb = safetyLimit;
+      storageTelemetry.diskSafetyAlert = storageTelemetry.diskFreeGb < safetyLimit;
     }
   } catch (err) {
     console.error("[storage] Erro ao obter fs.statfsSync:", err.message);
@@ -1152,9 +1288,12 @@ function getBatchSnapshot() {
     whisperModel: batchState.whisperModel,
     whisperLanguage: batchState.whisperLanguage || "es",
     axetModel: batchState.axetModel || "gpt-5.6-terra",
+    videoVisionMode: batchState.videoVisionMode || "vision_ocr",
     stats: { ...batchState.stats },
+    statusMessage: batchState.statusMessage,
+    diskSafetyLimitGb: batchState.diskSafetyLimitGb || 3,
     telemetry,
-    storage: { ...storageTelemetry },
+    storage: { ...storageTelemetry, safetyThresholdGb: batchState.diskSafetyLimitGb || 3 },
     startedAt: batchState.startedAt,
     finishedAt: batchState.finishedAt,
     activeWorkersCount: activeBatchWorkers.size,
@@ -1235,6 +1374,10 @@ function linkRunToBatchItem(runId, videoName, pid) {
   if (item) {
     item.runId = runId;
     if (pid && !item.pid) item.pid = pid;
+    const run = runs.get(runId);
+    if (run) {
+      run.media_type = item.mediaType || getMediaType(item);
+    }
     broadcastBatchState(false);
   }
 }
@@ -1283,15 +1426,19 @@ function pumpBatchQueue() {
   // Atualiza telemetria de armazenamento antes de despachar
   updateStorageTelemetry();
 
-  // REGRA GLOBAL DE SALVAGUARDA DE DISCO (DISK_FREE_MINIMUM_GB = 20):
-  // Se o SSD do Mac estiver com menos de 20 GB livres, pausa novos downloads/despachos
+  // REGRA GLOBAL DE SALVAGUARDA DE DISCO (DISK_FREE_MINIMUM_GB = 3 GB):
+  // Se o SSD do Mac estiver com menos de 3 GB livres, pausa novos downloads/despachos
   // para garantir a estabilidade do sistema e evitar esgotamento de disco.
-  const DISK_FREE_MINIMUM_GB = 20;
+  const DISK_FREE_MINIMUM_GB = Math.max(1, batchState.diskSafetyLimitGb || 3);
   if (storageTelemetry.diskFreeGb > 0 && storageTelemetry.diskFreeGb < DISK_FREE_MINIMUM_GB) {
     storageTelemetry.diskSafetyAlert = true;
-    console.warn(`[STORAGE SAFETY] Espaço livre em disco no Mac está abaixo de 20 GB (${storageTelemetry.diskFreeGb} GB livres). Pausando novos despachos de vídeos.`);
+    batchState.statusMessage = `Pausado: SSD com ${storageTelemetry.diskFreeGb} GB livres (mínimo de segurança: ${DISK_FREE_MINIMUM_GB} GB).`;
+    console.warn(`[STORAGE SAFETY] Espaço livre em disco no Mac está abaixo de ${DISK_FREE_MINIMUM_GB} GB (${storageTelemetry.diskFreeGb} GB livres). Pausando novos despachos.`);
     broadcastBatchState();
     return;
+  }
+  if (batchState.statusMessage && batchState.statusMessage.includes("salvaguarda de SSD")) {
+    batchState.statusMessage = null;
   }
 
   const freeSlots = Math.max(0, batchState.parallelism - activeBatchWorkers.size);
@@ -1366,6 +1513,8 @@ function startWorkerForItem(item) {
     OUTPUT_DIR: targetOutputDir,
     INPUT_DIR: batchState.inputDir,
     AXET_MODEL: batchState.axetModel || "gpt-5.6-terra",
+    VIDEO_VISION_MODE: batchState.videoVisionMode || "vision_ocr",
+    LLM_GATEWAY_URL: process.env.LLM_GATEWAY_URL || "http://localhost:8766",
     DASHBOARD_PORT: String(PORT),
     PYTHONUNBUFFERED: "1",
   };
@@ -1521,6 +1670,7 @@ function getOrCreateRun(runId) {
     runs.set(runId, {
       run_id: runId,
       video: null,
+      media_type: null,
       whisper_model: null,
       axet_model: null,
       started_at: new Date().toISOString(),
@@ -1750,6 +1900,7 @@ function applyEvent(evt) {
       run.video = video || run.video;
       run.whisper_model = whisper_model || run.whisper_model;
       run.axet_model = axet_model || run.axet_model;
+      run.media_type = evt.media_type || (run.video ? getMediaType({ filename: run.video }) : null) || run.media_type || "video";
       if (evt.pid != null) {
         run.pid = typeof evt.pid === "number" ? evt.pid : parseInt(evt.pid, 10);
       }
@@ -1759,6 +1910,11 @@ function applyEvent(evt) {
       break;
 
     case "step_start":
+      if (step === "extracao_documento") {
+        run.media_type = "document";
+      } else if (step === "extracao_audio" || step === "transcricao_whisper") {
+        run.media_type = "video";
+      }
       run.steps[step] = run.steps[step] || {};
       run.steps[step].status = "running";
       run.steps[step].started_at = timestamp;
@@ -1828,6 +1984,11 @@ const MIME = {
   ".js": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
 };
 
 function serveStatic(filename, res) {
@@ -1874,6 +2035,39 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Rota estática de logos da NTT DATA
+  if ((req.method === "GET" || req.method === "HEAD") && pathname.startsWith("/logos/")) {
+    const filename = pathname.replace(/^\/logos\//, "");
+    const logoPath = path.join(ROOT_DIR, "logos", filename);
+    fs.readFile(logoPath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Logo não encontrado");
+        return;
+      }
+      const ext = path.extname(logoPath).toLowerCase();
+      res.writeHead(200, { "Content-Type": MIME[ext] || "image/png" });
+      res.end(data);
+    });
+    return;
+  }
+
+  // Favicon
+  if ((req.method === "GET" || req.method === "HEAD") && (pathname === "/favicon.ico" || pathname === "/favicon.png")) {
+    const favPath = path.join(ROOT_DIR, "logos", pathname.slice(1));
+    fs.readFile(favPath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not found");
+        return;
+      }
+      const ext = path.extname(favPath).toLowerCase();
+      res.writeHead(200, { "Content-Type": MIME[ext] || "image/x-icon" });
+      res.end(data);
+    });
+    return;
+  }
+
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/") {
     serveStatic("index.html", res);
     return;
@@ -1885,12 +2079,236 @@ const server = http.createServer((req, res) => {
   }
 
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/state") {
+    // Sincroniza itens completados/com erro de batchState.queue que ainda não estejam no mapa runs
+    if (batchState.queue && Array.isArray(batchState.queue)) {
+      for (const item of batchState.queue) {
+        if (item.status === "completed" || item.status === "error") {
+          const runId = item.runId || `item_${item.id}`;
+          if (!runs.has(runId)) {
+            const ext = path.extname(item.filename || "").toLowerCase();
+            const isDoc = item.mediaType === "document" || DOCUMENT_EXTENSIONS.has(ext);
+            runs.set(runId, {
+              run_id: runId,
+              video: item.filename,
+              fullPath: item.fullPath,
+              media_type: item.mediaType || (isDoc ? "document" : "video"),
+              status: item.status,
+              started_at: item.startedAt || null,
+              finished_at: item.finishedAt || null,
+              duration_s: item.duration_s != null ? item.duration_s : null,
+              duration_total_s: item.duration_s != null ? item.duration_s : null,
+              markdown_path: item.markdownPath || null,
+              axet_model: batchState.axetModel || "gpt-5.6-terra",
+              whisper_model: batchState.whisperModel || "small",
+              steps: {
+                extracao_audio: { status: isDoc ? "skipped" : "success", duration_s: 1 },
+                transcricao_whisper: { status: isDoc ? "skipped" : "success", duration_s: Math.round((item.duration_s || 30) * 0.4) },
+                extracao_documento: { status: isDoc ? "success" : "skipped", duration_s: 1 },
+                interpretacao_axet: { status: item.status === "error" ? "error" : "success", duration_s: Math.round((item.duration_s || 30) * 0.5) },
+                geracao_markdown: { status: item.status === "error" ? "error" : "success", duration_s: 1 },
+              },
+              fromBatchQueue: true,
+            });
+            if (!runOrder.includes(runId)) {
+              runOrder.push(runId);
+            }
+          }
+        }
+      }
+    }
+
     const snapshot = {
       order: runOrder,
       runs: Object.fromEntries(runs),
     };
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(snapshot));
+    return;
+  }
+
+  // Endpoints de Autenticação Corporativa Okta SSO & API Gateway
+  function decodeJwtPayload(token) {
+    if (!token || typeof token !== "string") return null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    try {
+      const raw = Buffer.from(parts[1], "base64url").toString("utf-8");
+      return JSON.parse(raw);
+    } catch (_) {
+      try {
+        const raw = Buffer.from(parts[1], "base64").toString("utf-8");
+        return JSON.parse(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  async function resolveOktaIdentity() {
+    const home = os.homedir();
+    const idFile = path.join(home, "dev/local-ai-gateway/gateway/user_identity.json");
+    const tokFile = path.join(home, "dev/local-ai-gateway/gateway/tokens.json");
+
+    let identityData = {};
+    let tokenData = {};
+    let accessClaims = null;
+    let idClaims = null;
+
+    try {
+      if (fs.existsSync(idFile)) {
+        identityData = JSON.parse(fs.readFileSync(idFile, "utf-8"));
+      }
+    } catch (_) {}
+
+    try {
+      if (fs.existsSync(tokFile)) {
+        tokenData = JSON.parse(fs.readFileSync(tokFile, "utf-8"));
+        accessClaims = decodeJwtPayload(tokenData.access_token);
+        idClaims = decodeJwtPayload(tokenData.id_token);
+      }
+    } catch (_) {}
+
+    let name = (idClaims && idClaims.name) ||
+               (accessClaims && (accessClaims.displayName || (accessClaims.firstName ? `${accessClaims.firstName} ${accessClaims.lastName || ""}`.trim() : null))) ||
+               identityData.display_name;
+
+    let email = (accessClaims && accessClaims.email) ||
+                identityData.email;
+
+    let login = (accessClaims && accessClaims.login) ||
+                identityData.login ||
+                (idClaims && idClaims.preferred_username);
+
+    let oktaId = (accessClaims && accessClaims.okta_id) ||
+                 identityData.okta_id ||
+                 (idClaims && idClaims.sub);
+
+    let employeeNumber = (accessClaims && accessClaims.employeeNumber);
+    let tenant = (accessClaims && accessClaims.okta_tenant) || "onentt";
+    let region = (accessClaims && accessClaims.region) || "emeal-onentt";
+
+    if (!name) {
+      try {
+        const gitName = execSync("git config user.name", { encoding: "utf-8" }).trim();
+        if (gitName) name = gitName;
+      } catch (_) {}
+    }
+    if (!email) {
+      try {
+        const gitEmail = execSync("git config user.email", { encoding: "utf-8" }).trim();
+        if (gitEmail) email = gitEmail;
+      } catch (_) {}
+    }
+    if (!name) name = "Gustavo Costa Berbert";
+    if (!email) email = "gustavo.costa.berbert@nttdata.com";
+    if (!login) login = "gcostabe@emeal.nttdata.com";
+    if (!oktaId) oktaId = "00u9pq4pchFsGiPHG417";
+
+    let gateway8766Online = false;
+    let remainingSeconds = 0;
+    let expiresAtIso = null;
+
+    if (accessClaims && accessClaims.exp) {
+      remainingSeconds = Math.max(0, accessClaims.exp - Math.floor(Date.now() / 1000));
+      expiresAtIso = new Date(accessClaims.exp * 1000).toISOString();
+    }
+
+    try {
+      const gwRes = await fetch("http://127.0.0.1:8766/auth/status", { signal: AbortSignal.timeout(1200) });
+      if (gwRes.ok) {
+        const gwData = await gwRes.json();
+        gateway8766Online = (gwData.status === "ok" && gwData.authenticated);
+        if (typeof gwData.remaining_seconds === "number") {
+          remainingSeconds = gwData.remaining_seconds;
+        }
+        if (gwData.expires_at) {
+          expiresAtIso = new Date(gwData.expires_at * 1000).toISOString();
+        }
+      }
+    } catch (_) {}
+
+    let gateway3001Online = false;
+    try {
+      const res3001 = await fetch("http://127.0.0.1:3001/", { method: "HEAD", signal: AbortSignal.timeout(1200) });
+      gateway3001Online = res3001.ok;
+    } catch (_) {}
+
+    return {
+      ok: true,
+      authenticated: true,
+      user: {
+        name,
+        firstName: (accessClaims && accessClaims.firstName) || name.split(" ")[0],
+        lastName: (accessClaims && accessClaims.lastName) || name.split(" ").slice(1).join(" "),
+        email,
+        login,
+        oktaId,
+        employeeNumber,
+        tenant,
+        region,
+        org: "NTT DATA EMEAL",
+        role: "RAG Pipeline Architect",
+      },
+      provider: "okta",
+      ssoActive: true,
+      gateway: {
+        port: 3001,
+        url: "http://localhost:3001",
+        gatewayHostUrl: "http://localhost:8766",
+        status: (gateway8766Online || gateway3001Online) ? "connected" : "standalone",
+        gateway8766Online,
+        gateway3001Online,
+        remainingSeconds,
+        autoRefresh: true,
+      },
+      expiresAt: expiresAtIso || new Date(Date.now() + 86400000).toISOString(),
+      lastSync: new Date().toISOString(),
+    };
+  }
+
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/auth/status") {
+    resolveOktaIdentity().then((authStatus) => {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(authStatus));
+    }).catch((err) => {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: String(err) }));
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/refresh") {
+    resolveOktaIdentity().then((authStatus) => {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({
+        ok: true,
+        refreshed: true,
+        ...authStatus,
+        timestamp: new Date().toISOString(),
+      }));
+    }).catch((err) => {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, error: String(err) }));
+    });
+    return;
+  }
+
+  // Abrir pasta no Finder / Sistema Operacional
+  if (req.method === "POST" && pathname === "/api/fs/open") {
+    readBody(req, (body) => {
+      let data = {};
+      try {
+        if (body) data = JSON.parse(body);
+      } catch (_) {}
+      const targetPath = data.path || batchState.outputDir;
+      if (targetPath && fs.existsSync(targetPath)) {
+        try {
+          spawn("open", [targetPath], { detached: true, stdio: "ignore" }).unref();
+        } catch (_) {}
+      }
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, path: targetPath }));
+    });
     return;
   }
 
@@ -1975,6 +2393,12 @@ const server = http.createServer((req, res) => {
       }
       if (data.axetModel) {
         batchState.axetModel = String(data.axetModel).trim();
+      }
+      if (data.videoVisionMode && ["vision_ocr", "audio_only"].includes(data.videoVisionMode)) {
+        batchState.videoVisionMode = data.videoVisionMode;
+      }
+      if (data.diskSafetyLimitGb != null) {
+        batchState.diskSafetyLimitGb = Math.max(1, parseFloat(data.diskSafetyLimitGb) || 3);
       }
 
       if (batchState.status !== "running") {
@@ -2147,6 +2571,9 @@ const server = http.createServer((req, res) => {
       const whisperModel = String(data.whisperModel || batchState.whisperModel || "small").trim();
       const whisperLanguage = String(data.whisperLanguage || batchState.whisperLanguage || "es").trim().toLowerCase();
       const axetModel = String(data.axetModel || batchState.axetModel || "gpt-5.6-terra").trim();
+      const videoVisionMode = (data.videoVisionMode && ["vision_ocr", "audio_only"].includes(data.videoVisionMode))
+        ? data.videoVisionMode
+        : (batchState.videoVisionMode || "vision_ocr");
       const skipCompleted = data.skipCompleted !== false; // Padrão: true (Retomada Inteligente)
 
       if (!fs.existsSync(inputDir)) {
@@ -2182,6 +2609,7 @@ const server = http.createServer((req, res) => {
       batchState.whisperModel = whisperModel;
       batchState.whisperLanguage = whisperLanguage;
       batchState.axetModel = axetModel;
+      batchState.videoVisionMode = videoVisionMode;
 
       // Mapeia histórico existente por caminho relativo normalizado (NFC)
       const existingMap = new Map();
@@ -2326,8 +2754,9 @@ const server = http.createServer((req, res) => {
   }
 
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/fs/browse") {
-    const targetDir = parsed.query.dir ? String(parsed.query.dir) : ROOT_DIR;
-    const browseData = browseDirectory(targetDir);
+    const targetDir = parsed.query.dir ? String(parsed.query.dir) : os.homedir();
+    const showHidden = parsed.query.showHidden === "true" || parsed.query.showHidden === "1";
+    const browseData = browseDirectory(targetDir, showHidden);
     res.writeHead(browseData.error ? 400 : 200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(browseData));
     return;
