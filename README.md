@@ -62,21 +62,54 @@ graph TD
 
 ## 🚀 Instalação e Execução Local Rápida
 
-```bash
-# 1. Clonar o repositório
-git clone https://github.com/gcostabe/AXET-AGENT-CONTEXT-GEN.git
-cd AXET-AGENT-CONTEXT-GEN
+### 🪟 No Windows (Instalador One-Click via WSL2)
 
-# 2. Configurar o ambiente virtual Python
+O Windows 10/11 roda o pipeline com aceleração total de hardware via WSL2 sem exigir comandos manuais de Linux:
+
+1. Clone o repositório ou baixe o ZIP:
+   ```cmd
+   git clone https://github.com/gcostabe/AXET-AGENT-CONTEXT-GEN.git
+   cd AXET-AGENT-CONTEXT-GEN
+   ```
+2. Dê **duplo clique** no arquivo **`instalar_windows.bat`**.
+   * Ele detecta e habilita o WSL2 automaticamente;
+   * Instala FFmpeg, Python, Whisper e Node.js 20 em segundo plano;
+   * Cria um atalho **`Iniciar Cockpit NTT DATA.bat`** na sua Área de Trabalho (Desktop).
+3. **Uso diário:** Dê duplo clique no atalho da Área de Trabalho. Ele inicia o pipeline e abre o navegador automaticamente em `http://localhost:4545/`.
+
+---
+
+### 🍏 No macOS (Instalador One-Click)
+
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/gcostabe/AXET-AGENT-CONTEXT-GEN.git
+   cd AXET-AGENT-CONTEXT-GEN
+   ```
+2. Execute o script de configuração inicial:
+   ```bash
+   ./setup_mac.sh
+   ```
+   * Valida FFmpeg, Python e Node.js via Homebrew;
+   * Configura o ambiente virtual `.venv` com Whisper;
+   * Cria o atalho clicável **`Iniciar Cockpit NTT DATA.command`** na sua Mesa (Desktop).
+3. **Uso diário:** Dê duplo clique no atalho da Mesa ou execute `./iniciar_mac.command`.
+
+---
+
+### 💻 Instalação Manual via Linha de Comando (Linux / Devs)
+
+```bash
+# 1. Configurar o ambiente virtual Python
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install openai-whisper torch torchvision
 
-# 3. Inicializar o Cockpit Web
-node dashboard/server.js
+# 2. Inicializar o Cockpit Web
+node dashboard/server.js 4545
 
-# 4. Acessar no navegador
+# 3. Acessar no navegador
 # Abra http://localhost:4545/
 ```
 

@@ -2221,3 +2221,68 @@ Configurado o segundo repositório remoto `gcostabe` (`https://github.com/gcosta
 
 Apresentar confirmação ao usuário.
 
+---
+
+## CHECKPOINT-20260923-LOCAL-INSTALLERS-BEFORE
+
+Timestamp: 2026-09-23 22:24 America/Sao_Paulo
+
+Task ID: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
+
+Phase: IMPLEMENTATION
+
+State: BEFORE_ACTION
+
+### Action
+
+Criar instaladores e lançadores automatizados One-Click para execução local no Windows (WSL2) e no macOS:
+1. `instalar_windows.bat` e `scripts/setup_wsl_internal.sh` para provisionamento automático do WSL2, Ubuntu, FFmpeg, Python, Node e Whisper no Windows.
+2. `iniciar_cockpit.bat` para iniciar o serviço via WSL e abrir o browser nativo do Windows em `http://localhost:4545/`.
+3. `iniciar_mac.command` e `setup_mac.sh` para usuários de macOS.
+4. Atualização da documentação no `README.md`.
+5. Validação, commit e push.
+
+### Relevant Files
+
+- instalar_windows.bat
+- iniciar_cockpit.bat
+- scripts/setup_wsl_internal.sh
+- iniciar_mac.command
+- setup_mac.sh
+- README.md
+
+### Expected Next Action
+
+Criar os scripts e validar sintaxe.
+
+---
+
+## CHECKPOINT-20260923-LOCAL-INSTALLERS-AFTER
+
+Timestamp: 2026-09-23 22:26 America/Sao_Paulo
+
+Task ID: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
+
+Phase: IMPLEMENTATION
+
+State: AFTER_ACTION
+
+### What Actually Changed
+
+1. Criado `instalar_windows.bat`: Instalador automatizado para Windows que detecta/instala o WSL2 (Ubuntu), executa o provisionamento e cria o atalho `Iniciar Cockpit NTT DATA.bat` na Área de Trabalho do Windows.
+2. Criado `scripts/setup_wsl_internal.sh`: Script interno do Linux/WSL que instala FFmpeg, Node.js 20, Python 3, PyTorch (com detecção automática de CUDA) e Whisper.
+3. Criado `iniciar_cockpit.bat`: Lançador diário do Windows que inicia o servidor via WSL em background e abre automaticamente o navegador padrão em `http://localhost:4545/`.
+4. Criado `setup_mac.sh`: Instalador automatizado para macOS com validação de Homebrew/FFmpeg/Python/Node e criação de atalho na Mesa.
+5. Criado `iniciar_mac.command`: Lançador clicável para macOS que sobe o servidor e abre o browser.
+6. Atualizado `README.md` com instruções destacadas de instalação local One-Click para Windows e macOS.
+
+### Validation
+
+- Todos os scripts Bash (`setup_wsl_internal.sh`, `setup_mac.sh`, `iniciar_mac.command`) validados com `bash -n` sem erros.
+- Execução real do `iniciar_mac.command` validada confirmando detecção e abertura da URL do Cockpit.
+- Scripts Batch `.bat` estruturados com tratamento de codificação UTF-8 (`chcp 65001`), detecção segura de porta TCP via PowerShell e rotas dinâmicas via `wslpath`.
+
+### Next Safe Action
+
+Commit e push para ambos os repositórios Git remotos.
+

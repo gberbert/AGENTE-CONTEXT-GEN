@@ -22,16 +22,19 @@ Processamento multimodal enriquecido de vídeos com OCR de telas, formulários e
 
 Status: COMPLETED (2026-09-23)
 
-Task ID: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
+Task ID: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
 
-Description: Integração dinâmica da sessão corporativa Okta OIDC (OneNTT) e API Gateway local. Implementado extrator assíncrono em `dashboard/server.js` que consome `tokens.json` e `user_identity.json` de `dev/local-ai-gateway/gateway/` e o endpoint `/auth/status` de `:8766`, alimentando em tempo real os dados de Gustavo Costa Berbert (email: gustavo.costa.berbert@nttdata.com, login: gcostabe@emeal.nttdata.com, Okta ID, tenant onentt, TTL restante e status dos gateways) no cabeçalho e no modal Okta SSO.
+Description: Criada solução de instalação e lançamento local One-Click para Windows (WSL2 automatizado) e macOS (`instalar_windows.bat`, `iniciar_cockpit.bat`, `scripts/setup_wsl_internal.sh`, `setup_mac.sh`, `iniciar_mac.command`). O instalador cuida de toda a configuração interna de FFmpeg, Python, Whisper e Node, criando um atalho na Área de Trabalho do Windows e na Mesa do Mac para execução com duplo clique e abertura automática do navegador em `http://localhost:4545/`.
 
-Validation: Validado endpoint `/api/auth/status` via curl e renderização no navegador com captura de screenshot.
+Validation: Sintaxe dos scripts Bash validada com `bash -n`, teste de execução do lançador macOS realizado com sucesso e documentação completa atualizada no `README.md`.
 
 ---
 
 ## Current Implementation State
 
+- `instalar_windows.bat` & `scripts/setup_wsl_internal.sh` — Instalador One-Click para Windows via WSL2 com detecção de GPU NVIDIA CUDA.
+- `iniciar_cockpit.bat` — Lançador diário de duplo clique para Windows que inicia o Cockpit e abre o navegador padrão.
+- `setup_mac.sh` & `iniciar_mac.command` — Instalador e lançador de duplo clique para macOS.
 - `dashboard/server.js` — Resolvedor dinâmico `resolveOktaIdentity()` com decodificação de JWT e verificação de saúde do gateway (:8766 / :3001); endpoints `/api/auth/status`, `/api/auth/refresh`, `/api/fs/open`; sincronização de itens do manifesto em `/state`; auto-refresh de token gateway.
 - `dashboard/index.html` — Layout com badge Okta SSO dinâmico, modal enriquecido com metadados OIDC (Login corporativo, Okta User ID, TTL de sessão, IdP OneNTT), barra multissegmentada no KPI 2, simetria em diretórios e Card 3 de Telemetria de Tokens.
 - `dashboard/style.css` — Estilos corporativos do modal Okta SSO, cards ativos, grid simétrico e paleta NTT DATA.

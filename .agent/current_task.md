@@ -1,39 +1,22 @@
-# TAREFA: Integração Dinâmica de Identidade Okta SSO & Gateway
+# TAREFA: Montagem dos Instaladores e Lançadores Locais One-Click (Windows WSL2 & macOS)
 
-- **Task ID**: TASK-20260923-DYNAMIC-OKTA-INTEGRATION
+- **Task ID**: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
 - **Status**: COMPLETED
 - **Phase**: VERIFICATION
-- **Data/Hora**: 2026-09-23 19:36 America/Sao_Paulo
+- **Data/Hora**: 2026-09-23 22:27 America/Sao_Paulo
 - **Workspace**: /Users/gcostabe/dev/AGENTE-CONTEXT-GEN
 
 ## Entrega
 
-1. **Backend (`dashboard/server.js`)**:
-   - Implementado resolvedor dinâmico assíncrono `resolveOktaIdentity()` que decodifica o payload do token JWT de `tokens.json` e consome `user_identity.json` do gateway corporativo local (`/Users/gcostabe/dev/local-ai-gateway/gateway/`).
-   - Consulta em tempo real a integridade e tempo de expiração (`remaining_seconds`) no endpoint `/auth/status` do API Gateway local (`:8766`) e `:3001`.
-   - Claims autênticos extraídos e validados:
-     - Nome: **Gustavo Costa Berbert**
-     - E-mail corporativo: `gustavo.costa.berbert@nttdata.com`
-     - Login: `gcostabe@emeal.nttdata.com`
-     - Okta User ID: `00u9pq4pchFsGiPHG417`
-     - Employee Number: `138202`
-     - Tenant: `onentt`
-     - Região: `emeal-onentt`
-     - Organização: `NTT DATA EMEAL`
-     - Status do Token / Expiração real sincronizada.
-
-2. **Frontend (`dashboard/index.html` e `dashboard/app.js`)**:
-   - No modal e no cabeçalho: substituído qualquer valor estático por elementos dinâmicos vinculados via `syncAuthStatus()`.
-   - Inicialização imediata na carga da página e auto-sincronização a cada 60s em background.
-   - Botão "Sincronizar Sessão" com feedback visual ("✓ Sessão Sincronizada").
-   - Avatar com iniciais "GB" e cabeçalho com "Gustavo B.".
+1. **`instalar_windows.bat`**: Assistente automatizado de 1 clique para Windows que verifica/instala o WSL2 (Ubuntu), dispara o provisionamento de dependências e cria o atalho `Iniciar Cockpit NTT DATA.bat` na Área de Trabalho do Windows.
+2. **`scripts/setup_wsl_internal.sh`**: Script interno de provisionamento do Linux/WSL que instala FFmpeg, Node.js 20, Python 3, Whisper e PyTorch (com detecção automática de CUDA para GPUs NVIDIA).
+3. **`iniciar_cockpit.bat`**: Lançador diário para Windows que inicializa o serviço via WSL e abre o navegador padrão automaticamente em `http://localhost:4545/`.
+4. **`setup_mac.sh`**: Instalador automatizado para macOS.
+5. **`iniciar_mac.command`**: Lançador clicável para macOS.
+6. **`README.md`**: Atualizado com guias claros e diretos de uso para colaboradores no Windows e macOS.
 
 ## Validação
 
-- `curl -s http://localhost:4545/api/auth/status` validado com resposta 200 OK contendo todos os claims e TTL restante.
-- `curl -s -X POST http://localhost:4545/api/auth/refresh` validado.
-- Browser test via subagente com captura de screenshot (`okta_sso_modal_verified_1790202907026.png`) confirmando renderização impecável.
-
-## Próxima Ação Segura
-
-Aguardar novas orientações do usuário.
+- Validação de sintaxe de todos os scripts bash com `bash -n`.
+- Validação do fluxo do lançador macOS `iniciar_mac.command`.
+- Validação de sintaxe e chamadas do Windows Batch.
