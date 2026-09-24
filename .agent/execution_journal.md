@@ -2353,4 +2353,62 @@ State: AFTER_ACTION
 
 Pronto para commit e push das alterações para os remotes Git.
 
+---
 
+## CHECKPOINT-20260924-CUSTOM-FOLDER-PICKER-BEFORE
+
+Timestamp: 2026-09-24 10:35 America/Sao_Paulo
+
+Task ID: TASK-20260924-CUSTOM-FOLDER-PICKER-ONLY
+
+Phase: IMPLEMENTATION
+
+State: BEFORE_ACTION
+
+### Intended Action
+
+1. Em `dashboard/app.js`, refatorar `handleBrowseFolder(target)` para abrir imediatamente o modal customizado web `openFolderModal(target, currentVal)` sem chamar `/api/fs/choose-folder` e sem acionar Finder.
+2. Em `dashboard/server.js`, desativar a invocação de `osascript` em `/api/fs/choose-folder`, respondendo diretamente `{ ok: false, customPickerOnly: true }`.
+3. Validar a sintaxe dos arquivos alterados com `node --check`.
+
+### Reason
+
+Atendimento direto à solicitação do usuário ("mantenha somente o customizado nao tente abrir o finder"). Elimina a concorrência e o atraso causados pelo `osascript` que abria o Finder na tela antes do timeout.
+
+### Relevant Files
+
+- dashboard/app.js
+- dashboard/server.js
+
+### Current State
+
+`dashboard/app.js` tenta disparar `POST /api/fs/choose-folder`, que no backend chama `osascript` via `spawnSync` com timeout de 2.5s. Após o timeout, o modal customizado era exibido como fallback.
+
+### Expected Next Action
+
+Modificar `dashboard/app.js` e `dashboard/server.js`.
+
+---
+
+## CHECKPOINT-20260924-CUSTOM-FOLDER-PICKER-AFTER
+
+Timestamp: 2026-09-24 10:36 America/Sao_Paulo
+
+Task ID: TASK-20260924-CUSTOM-FOLDER-PICKER-ONLY
+
+Phase: VERIFICATION
+
+State: AFTER_ACTION
+
+### What Actually Changed
+
+1. `dashboard/app.js`: Refatorada a função `handleBrowseFolder(target)` removendo o `fetch("/api/fs/choose-folder")` e o timeout de 2.5s. Agora executa diretamente `openFolderModal(target, currentVal)`.
+2. `dashboard/server.js`: Modificada a função `chooseFolderNative` para não executar mais `spawnSync("osascript", ...)` e retornar imediatamente `{ ok: false, customOnly: true }`.
+
+### Validation
+
+- Validação de sintaxe com `node --check dashboard/app.js && node --check dashboard/server.js`: sucesso (código 0, sem erros).
+
+### Next Safe Action
+
+Pronto para responder ao usuário e orientar a atualização do Cockpit no navegador.

@@ -2814,28 +2814,10 @@ function applySelectedFolder(chosenPath) {
   closeFolderModal();
 }
 
-async function handleBrowseFolder(target) {
+function handleBrowseFolder(target) {
   activeFolderTarget = target;
   const currentVal = (target === "input" ? batchInputDir.value : batchOutputDir.value).trim();
-
-  // Tenta abrir o diálogo nativo do SO via macOS osascript (timeout de 2.5s)
-  try {
-    const res = await fetch("/api/fs/choose-folder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ defaultDir: currentVal }),
-    });
-    const data = await res.json();
-    if (data.ok && data.path) {
-      applySelectedFolder(data.path);
-      return;
-    }
-    if (data.cancelled) {
-      return; // Usuário cancelou normalmente no Finder
-    }
-  } catch (_) {}
-
-  // Fallback imediato: abre modal web de navegação de pastas
+  // Abre diretamente o modal web customizado de navegação de pastas (sem acionar o Finder do SO)
   openFolderModal(target, currentVal);
 }
 

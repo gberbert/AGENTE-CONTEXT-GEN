@@ -387,35 +387,10 @@ function scanVideosRecursively(dirPath, rootDir = dirPath) {
 }
 
 /**
- * Diálogo nativo do sistema operacional (macOS) para escolher pastas.
+ * Diálogo nativo do sistema operacional (desativado em favor do modal customizado web).
  */
-function chooseFolderNative(defaultDir) {
-  if (process.platform !== "darwin") {
-    return { ok: false, unsupported: true, error: "Diálogo nativo disponível apenas no macOS" };
-  }
-  try {
-    let script = 'POSIX path of (choose folder with prompt "Selecione a pasta para o AXET Video Pipeline"';
-    if (defaultDir && fs.existsSync(defaultDir)) {
-      script += ` default location POSIX file "${defaultDir.replace(/"/g, '\\"')}"`;
-    }
-    script += ")";
-    // Usando spawnSync direto para não passar por /bin/sh e evitar problemas de aspas
-    const child = spawnSync("osascript", ["-e", script], { encoding: "utf8", timeout: 2500 });
-    if (child.error) {
-      return { ok: false, fallback: true, error: child.error.message };
-    }
-    const chosen = (child.stdout || "").trim();
-    if (chosen && fs.existsSync(chosen)) {
-      return { ok: true, path: chosen };
-    }
-    const msg = String(child.stderr || "");
-    if (msg.includes("User canceled") || msg.includes("-128")) {
-      return { ok: false, cancelled: true };
-    }
-    return { ok: false, fallback: true, error: msg || "Pasta selecionada não encontrada" };
-  } catch (err) {
-    return { ok: false, fallback: true, error: err.message };
-  }
+function chooseFolderNative(_defaultDir) {
+  return { ok: false, customOnly: true, error: "Diálogo nativo desativado; utilize o seletor customizado web." };
 }
 
 /**

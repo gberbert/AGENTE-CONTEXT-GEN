@@ -4,6 +4,16 @@ Este documento serve como registro manual de versões e mudanças relevantes, ac
 
 Formato: `[VERSÃO] - AAAA-MM-DD` seguido de lista de mudanças.
 
+## [0.12.1] - 2026-09-24
+
+### Aprimorado / Corrigido
+
+- **Seletor de Diretórios do Cockpit Exclusivamente Web**:
+  - `dashboard/app.js`: abertura imediata e direta do modal customizado web ao clicar em "Procurar", removendo a tentativa de chamada síncrona com timeout para o AppleScript do macOS;
+  - `dashboard/server.js`: desativação defensiva da rotina nativa `chooseFolderNative` (`osascript`), prevenindo abertura indesejada do Finder e bloqueio do event loop do Node.js.
+
+---
+
 ## [0.12.0] - 2026-09-23
 
 ### Adicionado / Aprimorado

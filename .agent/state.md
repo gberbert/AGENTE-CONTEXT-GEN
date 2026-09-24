@@ -8,7 +8,7 @@ Agent/session: Axet Multimodal Pipeline — Redesenho de Layout em Tela Única (
 
 ## Current Version
 
-v0.12.0 (Ver `versionamento.md` para o histórico detalhado).
+v0.12.1 (Ver `versionamento.md` para o histórico detalhado).
 
 ---
 
@@ -20,13 +20,13 @@ Processamento multimodal enriquecido de vídeos com OCR de telas, formulários e
 
 ## Active Task
 
-Status: COMPLETED (2026-09-23)
+Status: COMPLETED (2026-09-24)
 
-Task ID: TASK-20260923-EMBED-LOCAL-AI-GATEWAY
+Task ID: TASK-20260924-CUSTOM-FOLDER-PICKER-ONLY
 
-Description: Incorporação completa do Local AI Gateway corporativo (portas :8766 e :3001, sincronização Okta, perfis AXET, proxies Claude/OpenAI e utilitários) diretamente dentro do repositório para torná-lo autocontido.
+Description: Manter exclusivamente o modal customizado de seleção de diretórios, removendo a tentativa de abertura nativa via Finder (osascript).
 
-Validation: Validação de compilação Python, testes de endpoints :8766 e :4545, verificação de integridade gitignore para tokens corporativos e inicialização de serviço local via launchd.
+Validation: Concluída com sucesso (`node --check dashboard/app.js` e `node --check dashboard/server.js`).
 
 ---
 
@@ -40,12 +40,11 @@ Validation: Validação de compilação Python, testes de endpoints :8766 e :454
 - `dashboard/style.css` — Estilos corporativos do modal Okta SSO, cards ativos, grid simétrico e paleta NTT DATA.
 - `dashboard/app.js` — Função `syncAuthStatus()` para binding dinâmico de todos os claims corporativos, status em tempo real a cada 60s, sincronização de filas e histórico.
 
-
-
 ---
 
 ## Latest Relevant Changes
 
+- Removida a tentativa de acionamento do Finder via AppleScript (`osascript`) ao clicar em "Procurar": `dashboard/app.js` agora abre diretamente e de forma instantânea o modal customizado de seleção de diretórios, e `dashboard/server.js` teve `chooseFolderNative` desativado defensivamente.
 - Atualizado `relatorio_tecnico_multimodal_reef_tron.md` com relatório técnico-funcional de 27 seções, baseado exclusivamente na transcrição Whisper e em oito frames OCR fornecidos (03:56–30:55). A entrega contém 20 blocos de Q&A, arquitetura lógica restrita às evidências, mapa cronológico revisado e divergência DUP/RTE explicitada e resolvida pela resposta completa do Frame 03.
 - Implementado redesenho completo de tela única (Single-Screen 100vh Viewport) eliminando scroll confuso de 3.500px.
 - Implementada paginação e busca instantânea com chips de status na Fila do Lote e no Histórico Concluído.
