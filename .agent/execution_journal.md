@@ -2286,3 +2286,71 @@ State: AFTER_ACTION
 
 Commit e push para ambos os repositórios Git remotos.
 
+---
+
+## CHECKPOINT-20260923-EMBED-GATEWAY-BEFORE
+
+Timestamp: 2026-09-23 22:53 America/Sao_Paulo
+
+Task ID: TASK-20260923-EMBED-LOCAL-AI-GATEWAY
+
+Phase: IMPLEMENTATION
+
+State: BEFORE_ACTION
+
+### Intended Action
+
+1. Copiar a pasta `gateway/` e utilitários de `shared/` de `/Users/gcostabe/dev/local-ai-gateway` para `/Users/gcostabe/dev/AGENTE-CONTEXT-GEN/`.
+2. Adicionar proteção de tokens e logs no `.gitignore` e criar `gateway/tokens.example.json`.
+3. Ajustar `dashboard/server.js` para resolver a identidade Okta e tokens lendo prioritariamente de `./gateway/`.
+4. Atualizar os lançadores `iniciar_mac.command` e `iniciar_cockpit.bat` para garantir que o gateway na porta `:8766` seja inicializado automaticamente junto com o Cockpit.
+5. Atualizar os instaladores `setup_mac.sh` e `instalar_windows.bat`.
+6. Validar compilação dos scripts Python e funcionamento dos endpoints.
+
+### Expected Next Action
+
+Copiar arquivos de gateway e shared, e configurar .gitignore.
+
+---
+
+## CHECKPOINT-20260923-EMBED-GATEWAY-AFTER
+
+Timestamp: 2026-09-23 23:03 America/Sao_Paulo
+
+Task ID: TASK-20260923-EMBED-LOCAL-AI-GATEWAY
+
+Phase: VERIFICATION
+
+State: AFTER_ACTION
+
+### What Actually Changed
+
+1. **Incorporação dos Módulos do Gateway:**
+   - Criados `gateway/local_ai_gateway.py`, `gateway/config_loader.py`, `gateway/local-ai-gateway.toml`, `gateway/sync_okta_identity.py`, `gateway/initialize_proxy.py`, `gateway/reset_proxy.py`, `gateway/README.md` e `shared/`.
+   - Adicionado `refresh_axet_token.py` na raiz e em `gateway/`.
+   - Criado `package.json` na raiz com scripts `gateway:start` e `gateway:sync`.
+2. **Segurança de Credenciais:**
+   - Criados `gateway/tokens.example.json` e `gateway/user_identity.example.json`.
+   - `.gitignore` atualizado para proteger estritamente `gateway/tokens.json`, `gateway/user_identity.json` e `gateway/logs/`.
+3. **Resolução de Identidade Local:**
+   - `dashboard/server.js` atualizado para ler identidade e tokens primariamente de `./gateway/`.
+4. **Lançadores e Instaladores Automatizados:**
+   - `iniciar_mac.command` e `iniciar_cockpit.bat` atualizados para checar e inicializar o gateway local na porta `:8766` antes do Cockpit.
+   - `setup_mac.sh` e `scripts/setup_wsl_internal.sh` atualizados com `cryptography` e `tomli`.
+   - Criado `macos/install_gateway_service_mac.sh` para registro dinâmico no launchd.
+5. **Documentação:**
+   - `README.md` e `README2.md` atualizados com a nova árvore e menção ao Gateway embutido.
+
+### Validation
+
+- Todos os scripts Python compilados com `python3 -m py_compile`.
+- `sync_okta_identity.py` executado com sucesso e atualizou tokens e perfil no diretório local.
+- Launchd daemon reiniciado e confirmado rodando com CWD em `/Users/gcostabe/dev/AGENTE-CONTEXT-GEN` (PID 42741).
+- Endpoint do Gateway `http://127.0.0.1:8766/auth/status` retornou `status: ok`, `authenticated: true`.
+- Endpoint do Cockpit `http://localhost:4545/api/auth/status` retornou `ok: true`, `authenticated: true`, `gateway8766Online: true`, `status: connected`.
+
+### Next Safe Action
+
+Pronto para commit e push das alterações para os remotes Git.
+
+

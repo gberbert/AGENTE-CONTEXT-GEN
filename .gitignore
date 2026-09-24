@@ -108,6 +108,7 @@ test_segment.*
 # ------------------------------------------------------------------------------
 _*.*
 scripts/_*.*
+!**/__init__.py
 .graphify/
 .graphifyignore
 smoke-run/
@@ -134,3 +135,17 @@ scratch/
 *.pem
 *.cert
 credentials.json
+
+# ------------------------------------------------------------------------------
+# 11. Local AI Gateway Tokens & Logs
+# ------------------------------------------------------------------------------
+gateway/tokens.json
+gateway/tokens-*.json
+gateway/tokens.json.lock
+gateway/user_identity.json
+gateway/logs/
+gateway/*.tmp
+gateway/*.bak*
+!gateway/tokens.example.json
+!gateway/user_identity.example.json
+

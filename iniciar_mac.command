@@ -13,14 +13,23 @@ echo "  🚀 NTT DATA — AXET-AGENT-CONTEXT-GEN (macOS Launcher)"
 echo "==============================================================================="
 echo ""
 
-# 1. Verificar se o servidor já está rodando
+# 1. Verificar e inicializar Local AI Gateway (:8766)
+if curl -s -I http://127.0.0.1:8766/auth/status >/dev/null 2>&1 || curl -s -I http://127.0.0.1:8766/ >/dev/null 2>&1; then
+    echo "[OK] Local AI Gateway corporativo já está ativo na porta 8766"
+else
+    echo "[INFO] Iniciando Local AI Gateway na porta 8766..."
+    nohup python3 gateway/local_ai_gateway.py > /tmp/axet-local-gateway.log 2>&1 &
+    sleep 1
+fi
+
+# 2. Verificar se o servidor Cockpit já está rodando
 if curl -s -I http://localhost:4545/ >/dev/null 2>&1; then
     echo "[OK] Cockpit já está rodando em http://localhost:4545/"
     open "http://localhost:4545/"
     exit 0
 fi
 
-# 2. Ativar virtualenv se existir
+# 3. Ativar virtualenv se existir
 if [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
 fi

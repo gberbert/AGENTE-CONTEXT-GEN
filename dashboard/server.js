@@ -2146,8 +2146,13 @@ const server = http.createServer((req, res) => {
 
   async function resolveOktaIdentity() {
     const home = os.homedir();
-    const idFile = path.join(home, "dev/local-ai-gateway/gateway/user_identity.json");
-    const tokFile = path.join(home, "dev/local-ai-gateway/gateway/tokens.json");
+    const localIdFile = path.join(__dirname, "..", "gateway", "user_identity.json");
+    const localTokFile = path.join(__dirname, "..", "gateway", "tokens.json");
+    const externalIdFile = path.join(home, "dev/local-ai-gateway/gateway/user_identity.json");
+    const externalTokFile = path.join(home, "dev/local-ai-gateway/gateway/tokens.json");
+
+    const idFile = fs.existsSync(localIdFile) ? localIdFile : externalIdFile;
+    const tokFile = fs.existsSync(localTokFile) ? localTokFile : externalTokFile;
 
     let identityData = {};
     let tokenData = {};

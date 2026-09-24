@@ -1,0 +1,22 @@
+{
+  "name": "axet-agent-context-gen",
+  "version": "0.12.0",
+  "description": "Pipeline Multimodal e Cockpit Web RAG com Local AI Gateway Corporativo AXET / Okta SSO integrado",
+  "main": "dashboard/server.js",
+  "scripts": {
+    "start": "node dashboard/server.js 4545",
+    "gateway:start": "python3 gateway/local_ai_gateway.py",
+    "gateway:sync": "python3 gateway/sync_okta_identity.py",
+    "cleanup:transient": "rm -rf _*.* scripts/_*.* smoke-run/ legacy_piloto/ scratch/ *.tmp *.temp *.bak"
+  },
+  "keywords": [
+    "axet",
+    "nttdata",
+    "multimodal",
+    "rag",
+    "whisper",
+    "gateway"
+  ],
+  "author": "Gustavo Costa Berbert",
+  "license": "UNLICENSED"
+}

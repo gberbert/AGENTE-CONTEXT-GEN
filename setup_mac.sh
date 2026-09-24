@@ -54,6 +54,7 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install torch torchvision
 pip install openai-whisper
+pip install cryptography tomli
 
 # 4. Ajustar permissões e criar atalho na Mesa/Desktop
 echo "[4/4] Criando atalho na Mesa (Desktop)..."

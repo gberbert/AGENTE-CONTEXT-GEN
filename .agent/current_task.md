@@ -1,22 +1,18 @@
-# TAREFA: Montagem dos Instaladores e Lançadores Locais One-Click (Windows WSL2 & macOS)
+# TAREFA: Incorporação do Local AI Gateway no Repositório
 
-- **Task ID**: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
+- **Task ID**: TASK-20260923-EMBED-LOCAL-AI-GATEWAY
 - **Status**: COMPLETED
 - **Phase**: VERIFICATION
-- **Data/Hora**: 2026-09-23 22:27 America/Sao_Paulo
+- **Data/Hora**: 2026-09-23 23:02 America/Sao_Paulo
 - **Workspace**: /Users/gcostabe/dev/AGENTE-CONTEXT-GEN
 
-## Entrega
+## Entregas Concluídas
 
-1. **`instalar_windows.bat`**: Assistente automatizado de 1 clique para Windows que verifica/instala o WSL2 (Ubuntu), dispara o provisionamento de dependências e cria o atalho `Iniciar Cockpit NTT DATA.bat` na Área de Trabalho do Windows.
-2. **`scripts/setup_wsl_internal.sh`**: Script interno de provisionamento do Linux/WSL que instala FFmpeg, Node.js 20, Python 3, Whisper e PyTorch (com detecção automática de CUDA para GPUs NVIDIA).
-3. **`iniciar_cockpit.bat`**: Lançador diário para Windows que inicializa o serviço via WSL e abre o navegador padrão automaticamente em `http://localhost:4545/`.
-4. **`setup_mac.sh`**: Instalador automatizado para macOS.
-5. **`iniciar_mac.command`**: Lançador clicável para macOS.
-6. **`README.md`**: Atualizado com guias claros e diretos de uso para colaboradores no Windows e macOS.
+1. **Módulos do Gateway Incorporados:** `gateway/local_ai_gateway.py`, `gateway/config_loader.py`, `gateway/local-ai-gateway.toml`, `gateway/sync_okta_identity.py`, `gateway/initialize_proxy.py`, `gateway/reset_proxy.py`, `gateway/README.md` e `shared/`.
+2. **Segurança e Templates:** `gateway/tokens.example.json` e `gateway/user_identity.example.json` criados; `.gitignore` atualizado para proteger tokens pessoais e logs corporativos.
+3. **Resolução de Identidade Local:** `dashboard/server.js` atualizado para ler identidade e tokens primariamente de `./gateway/`.
+4. **Lançadores e Inicializadores Atualizados:** `iniciar_mac.command` e `iniciar_cockpit.bat` configurados para subir automaticamente o gateway na porta `:8766` antes de abrir o Cockpit (:4545).
+5. **Instaladores e Serviços macOS:** `setup_mac.sh`, `scripts/setup_wsl_internal.sh` e `macos/install_gateway_service_mac.sh` implementados.
+6. **Validação:** Processo do gateway inicializado com sucesso e apontando para o diretório local (`CWD: /Users/gcostabe/dev/AGENTE-CONTEXT-GEN`), endpoint `http://127.0.0.1:8766/auth/status` e Cockpit `http://localhost:4545/api/auth/status` 100% online e operacionais.
 
-## Validação
 
-- Validação de sintaxe de todos os scripts bash com `bash -n`.
-- Validação do fluxo do lançador macOS `iniciar_mac.command`.
-- Validação de sintaxe e chamadas do Windows Batch.

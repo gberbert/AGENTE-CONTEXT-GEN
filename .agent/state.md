@@ -22,11 +22,11 @@ Processamento multimodal enriquecido de vídeos com OCR de telas, formulários e
 
 Status: COMPLETED (2026-09-23)
 
-Task ID: TASK-20260923-LOCAL-INSTALLERS-ONECLICK
+Task ID: TASK-20260923-EMBED-LOCAL-AI-GATEWAY
 
-Description: Criada solução de instalação e lançamento local One-Click para Windows (WSL2 automatizado) e macOS (`instalar_windows.bat`, `iniciar_cockpit.bat`, `scripts/setup_wsl_internal.sh`, `setup_mac.sh`, `iniciar_mac.command`). O instalador cuida de toda a configuração interna de FFmpeg, Python, Whisper e Node, criando um atalho na Área de Trabalho do Windows e na Mesa do Mac para execução com duplo clique e abertura automática do navegador em `http://localhost:4545/`.
+Description: Incorporação completa do Local AI Gateway corporativo (portas :8766 e :3001, sincronização Okta, perfis AXET, proxies Claude/OpenAI e utilitários) diretamente dentro do repositório para torná-lo autocontido.
 
-Validation: Sintaxe dos scripts Bash validada com `bash -n`, teste de execução do lançador macOS realizado com sucesso e documentação completa atualizada no `README.md`.
+Validation: Validação de compilação Python, testes de endpoints :8766 e :4545, verificação de integridade gitignore para tokens corporativos e inicialização de serviço local via launchd.
 
 ---
 

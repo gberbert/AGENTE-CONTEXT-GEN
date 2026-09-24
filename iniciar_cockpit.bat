@@ -21,7 +21,17 @@ if "%WSL_PROJECT_DIR%"=="" (
     exit /b 1
 )
 
-:: 2. Testar se o Cockpit já está rodando na porta 4545
+:: 2. Testar se o Local AI Gateway já está rodando na porta 8766
+powershell -Command "$client = New-Object System.Net.Sockets.TcpClient; try { $client.Connect('127.0.0.1', 8766); exit 0 } catch { exit 1 }" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] Inicializando Local AI Gateway corporativo na porta 8766...
+    start "AXET Local AI Gateway" /min wsl -d Ubuntu -- bash -c "cd '%WSL_PROJECT_DIR%' && if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi && exec python3 gateway/local_ai_gateway.py"
+    timeout /t 1 /nobreak >nul
+) else (
+    echo [OK] Local AI Gateway corporativo já está ativo na porta 8766.
+)
+
+:: 3. Testar se o Cockpit já está rodando na porta 4545
 powershell -Command "$client = New-Object System.Net.Sockets.TcpClient; try { $client.Connect('127.0.0.1', 4545); exit 0 } catch { exit 1 }" >nul 2>&1
 if %errorlevel% equ 0 (
     echo [OK] O servidor do Cockpit já está ativo na porta 4545!
@@ -30,7 +40,7 @@ if %errorlevel% equ 0 (
     exit /b 0
 )
 
-:: 3. Iniciar o servidor Node.js dentro do WSL em segundo plano
+:: 4. Iniciar o servidor Node.js dentro do WSL em segundo plano
 echo [INFO] Inicializando servidor do Cockpit no WSL2...
 echo Diretório: %WSL_PROJECT_DIR%
 echo.

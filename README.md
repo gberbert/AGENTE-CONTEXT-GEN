@@ -56,7 +56,8 @@ graph TD
 * **Python:** 3.10 ou 3.11.
 * **Node.js:** v18.x ou v20.x LTS (o dashboard utiliza arquitetura nativa com zero dependências externas no runtime Node).
 * **Git:** Para clonagem e versionamento.
-* **LLM Gateway / API Key:** Acesso a um provedor compatível (OpenAI, Claude via Gateway local em `:8766` ou serviço corporativo).
+* **LLM Gateway / API Key:** O **Local AI Gateway corporativo (:8766)** já vem **100% embutido** na pasta `gateway/` deste repositório, com proxy reverso transparente para AXET Bedrock/Claude e OpenAI/Codex, renovação automática de Okta SSO e suporte a rotação dinâmica de quotas de projetos.
+
 
 ---
 
@@ -424,6 +425,13 @@ O Cockpit está desenhado para reconhecer tokens corporativos OIDC emitidos por 
 
 ```text
 /home/azureuser/AXET-AGENT-CONTEXT-GEN/
+├── gateway/                 # Local AI Gateway Corporativo (:8766)
+│   ├── local_ai_gateway.py  # Servidor Proxy reverso AXET/Okta (Bedrock/OpenAI)
+│   ├── sync_okta_identity.py# Sincronizador de tokens Okta e projetos AXET
+│   ├── local-ai-gateway.toml# Configurações de rotas, timeouts e modelos
+│   ├── config_loader.py     # Loader TOML dinâmico (tomllib / tomli)
+│   └── tokens.example.json  # Template de formato para autenticação
+├── shared/                  # Ferramentas auxiliares de verificação e proxy AXET
 ├── dashboard/               # Interface Web e Servidor HTTP/SSE nativo
 │   ├── server.js            # Servidor Node.js (API REST + SSE + Watchdog)
 │   ├── app.js               # Frontend dinâmico com paginação e status SSE

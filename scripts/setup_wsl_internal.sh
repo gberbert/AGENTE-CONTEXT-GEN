@@ -54,8 +54,9 @@ else
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 fi
 
-echo "    Instalando OpenAI Whisper..."
+echo "    Instalando OpenAI Whisper e dependências do Gateway..."
 pip install openai-whisper
+pip install cryptography tomli
 
 # 5. Ajustar permissões dos scripts
 echo ">>> [5/5] Ajustando permissões de execução dos scripts..."
